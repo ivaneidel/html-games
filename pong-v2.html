@@ -14,7 +14,6 @@ body {
   overflow:hidden;
   touch-action:none;
 }
-
 #ui { padding:15px; }
 canvas { display:none; }
 
@@ -104,10 +103,18 @@ function setup(){
   });
 
   pc.onicecandidate = e=>{
-    if(!e.candidate){
-      log("✅ ICE complete");
-      out.value = JSON.stringify(pc.localDescription);
+    if(e.candidate){
+      log("🧊 ICE candidate");
+    } else {
+      log("✅ ICE gathering end");
     }
+
+    // 🔥 ALWAYS update signal
+    out.value = JSON.stringify(pc.localDescription);
+  };
+
+  pc.onicegatheringstatechange = ()=>{
+    log("📡 ICE gathering: " + pc.iceGatheringState);
   };
 
   pc.oniceconnectionstatechange = ()=>{
@@ -150,6 +157,10 @@ async function host(){
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
+    // 🔥 SHOW IMMEDIATELY
+    out.value = JSON.stringify(pc.localDescription);
+    log("📤 Offer ready (early)");
+
   } catch(e){ log("❌ Host: "+e); }
 }
 
@@ -168,6 +179,11 @@ async function processSignal(){
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+
+      // 🔥 SHOW ANSWER IMMEDIATELY
+      out.value = JSON.stringify(pc.localDescription);
+      log("📤 Answer ready");
+
     } else {
       log("📥 Answer");
       await pc.setRemoteDescription(data);
