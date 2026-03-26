@@ -10,7 +10,7 @@
   #ui {
     position:fixed; inset:0; display:flex; flex-direction:column;
     align-items:center; justify-content:center; gap:14px;
-    background:rgba(0,0,0,0.96); overflow-y:auto; padding:16px; box-sizing:border-box;
+    background:rgba(0,0,0,0.96); overflow-y:auto; padding:20px; box-sizing:border-box;
   }
   #ui h1 { margin:0; font-size:clamp(20px,5vw,32px); letter-spacing:4px; }
   p.hint { margin:0; font-size:13px; opacity:0.65; text-align:center; max-width:320px; }
@@ -20,22 +20,32 @@
   }
   button:active { background:#aaa; }
   .btn-row { display:flex; gap:12px; }
-  .status { font-size:12px; opacity:0.75; text-align:center; }
-  #qr-wrap { background:#fff; padding:24px; border-radius:4px; }
-  #scan-video { width:240px; height:240px; object-fit:cover; border:2px solid #fff; display:block; }
+  .status { font-size:12px; opacity:0.75; text-align:center; min-height:18px; }
+  .qr-box { background:#fff; padding:24px; border-radius:4px; }
+  #scan-video { width:260px; height:260px; object-fit:cover; border:2px solid #fff; display:block; border-radius:2px; }
+  #scan-region { width:260px; height:260px; position:relative; }
+  #scan-region video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:2px; }
+  /* corner brackets overlay */
+  #scan-region::before {
+    content:''; position:absolute; inset:0; z-index:2; pointer-events:none;
+    border:3px solid transparent;
+    box-shadow: inset 0 0 0 0 #fff;
+    outline: 2px solid #fff;
+    border-radius:2px;
+  }
 
   /* ── Debug log ── */
   #log-wrap {
     position:fixed; bottom:0; left:0; right:0;
-    max-height:38vh; overflow-y:auto;
-    background:rgba(0,0,0,0.88); border-top:1px solid #333;
+    max-height:35vh; overflow-y:auto;
+    background:rgba(0,0,0,0.9); border-top:1px solid #333;
     font-size:11px; padding:4px 6px; box-sizing:border-box;
     z-index:9999;
   }
-  #log-wrap .entry { border-bottom:1px solid #222; padding:2px 0; word-break:break-all; }
-  #log-wrap .entry.err { color:#f66; }
-  #log-wrap .entry.ok  { color:#6f6; }
-  #log-wrap .entry.info{ color:#adf; }
+  #log-wrap .e { border-bottom:1px solid #1a1a1a; padding:2px 0; word-break:break-all; }
+  #log-wrap .err { color:#f66; }
+  #log-wrap .ok  { color:#6f6; }
+  #log-wrap .info{ color:#adf; }
   #log-btn {
     position:fixed; bottom:4px; right:4px; z-index:10000;
     background:#333; color:#fff; border:none; font-size:11px;
@@ -49,507 +59,395 @@
 <div id="ui">
   <h1>PONG</h1>
 
-  <div id="screen-home" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+  <!-- HOME -->
+  <div id="s-home" style="display:flex;flex-direction:column;align-items:center;gap:14px;">
     <div class="btn-row">
       <button id="btn-host">HOST</button>
       <button id="btn-join">JOIN</button>
     </div>
   </div>
 
-  <div id="screen-host" style="display:none;flex-direction:column;align-items:center;gap:10px;">
-    <p class="hint">Show this QR to the other player</p>
-    <div id="qr-wrap"><canvas id="qr-canvas" width="240" height="240"></canvas></div>
-    <div id="status-host" class="status">Generating offer…</div>
+  <!-- HOST -->
+  <div id="s-host" style="display:none;flex-direction:column;align-items:center;gap:12px;">
+    <p class="hint" id="host-hint">Generating offer…</p>
+    <div class="qr-box" id="host-qr-box"><canvas id="qr-host" width="260" height="260"></canvas></div>
+    <div id="st-host" class="status">Please wait…</div>
     <button id="btn-scan-guest" style="display:none;">SCAN GUEST QR</button>
+    <!-- host's scanner goes here dynamically -->
+    <div id="host-scan-area"></div>
   </div>
 
-  <div id="screen-join" style="display:none;flex-direction:column;align-items:center;gap:10px;">
-    <p class="hint" id="join-hint">Opening camera…</p>
-    <video id="scan-video" autoplay playsinline muted></video>
-    <div id="status-join" class="status">—</div>
-    <div id="answer-qr-wrap" style="display:none;background:#fff;padding:10px;"><canvas id="answer-qr-canvas" width="240" height="240"></canvas></div>
-    <p class="hint" id="answer-hint" style="display:none;">Show this QR to the HOST</p>
+  <!-- JOIN -->
+  <div id="s-join" style="display:none;flex-direction:column;align-items:center;gap:12px;">
+    <p class="hint" id="join-hint">Scan the host's QR code</p>
+    <div id="scan-region"><video id="scan-video" autoplay playsinline muted></video></div>
+    <div id="st-join" class="status">Starting camera…</div>
+    <!-- answer QR shown after scanning -->
+    <div class="qr-box" id="answer-qr-box" style="display:none;"><canvas id="qr-answer" width="260" height="260"></canvas></div>
   </div>
 </div>
 
-<!-- debug log overlay -->
 <div id="log-wrap"></div>
 <button id="log-btn" onclick="toggleLog()">LOG ▲</button>
 
+<!-- QR generator (classic, reliable) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script>
+
+<script type="module">
+// ─── nimiq qr-scanner (ES module) ────────────────────────────────────────────
+// Worker path must be set before import
+const QR_SCANNER_CDN = 'https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner.min.js';
+const QR_WORKER_CDN  = 'https://cdn.jsdelivr.net/npm/qr-scanner@1.4.2/qr-scanner-worker.min.js';
+
+let QrScanner = null;
+async function loadQrScanner() {
+  if (QrScanner) return QrScanner;
+  log("loading qr-scanner…");
+  try {
+    const mod = await import(QR_SCANNER_CDN);
+    QrScanner = mod.default;
+    QrScanner.WORKER_PATH = QR_WORKER_CDN;
+    log("qr-scanner loaded, BarcodeDetector native="+await QrScanner.hasCamera(), "ok");
+    return QrScanner;
+  } catch(e) { log("qr-scanner load failed: "+e.message, "err"); throw e; }
+}
+
 // ─── DEBUG LOG ────────────────────────────────────────────────────────────────
 const logWrap = document.getElementById("log-wrap");
 let logVisible = true;
-function toggleLog() {
+window.toggleLog = () => {
   logVisible = !logVisible;
   logWrap.style.display = logVisible ? "block" : "none";
   document.getElementById("log-btn").textContent = logVisible ? "LOG ▼" : "LOG ▲";
-}
+};
 function log(msg, type="info") {
-  console.log("[" + type + "]", msg);
+  console.log("["+type+"]", msg);
   const d = document.createElement("div");
-  d.className = "entry " + type;
-  const t = new Date().toISOString().substr(11,8);
-  d.textContent = t + " " + msg;
+  d.className = "e " + type;
+  d.textContent = new Date().toISOString().substr(11,8) + " " + msg;
   logWrap.appendChild(d);
   logWrap.scrollTop = logWrap.scrollHeight;
 }
-window.onerror = (m,s,l,c,e) => log("UNCAUGHT: "+m+" ("+s+":"+l+")", "err");
-window.onunhandledrejection = e => log("UNHANDLED PROMISE: "+(e.reason?.stack||e.reason), "err");
-
-// ─── SDP PACK / UNPACK ───────────────────────────────────────────────────────
-// We throw away the full SDP and encode only the 5 fields WebRTC actually needs
-// for a DataChannel-only connection, in a compact pipe-delimited string.
-// Format:  TYPE|UFRAG|PWD|FINGERPRINT|CANDIDATE
-//   TYPE        : "o" (offer) or "a" (answer)
-//   UFRAG       : typically 4 chars
-//   PWD         : typically 22 chars
-//   FINGERPRINT : 95 chars  "sha-256 XX:XX:…"  → strip "sha-256 " → 47 hex pairs
-//   CANDIDATE   : just the candidate value after "a=candidate:"
-// Total raw ≈ 170 chars → base64url ≈ 228 chars → QR version ~5, trivially scannable.
-
-function extract(sdp, prefix) {
-  const line = sdp.split("\n").find(l => l.trimStart().startsWith(prefix));
-  return line ? line.trim().slice(prefix.length).trim() : "";
-}
-
-function packSDP(sdpObj) {
-  const sdp = sdpObj.sdp;
-  const type   = sdpObj.type === "offer" ? "o" : "a";
-  const ufrag  = extract(sdp, "a=ice-ufrag:");
-  const pwd    = extract(sdp, "a=ice-pwd:");
-  // Fingerprint: drop "sha-256 " prefix, store just the hex
-  const fpFull = extract(sdp, "a=fingerprint:");
-  const fp     = fpFull.replace(/^sha-256 /i, "");
-  const setup  = extract(sdp, "a=setup:");
-
-  // Pick best candidate: prefer srflx, fall back to host
-  const candLines = sdp.split("\n")
-    .filter(l => l.trimStart().startsWith("a=candidate:"))
-    .map(l => l.trim().slice("a=candidate:".length));
-  const srflx = candLines.find(c => c.includes("srflx"));
-  const cand  = srflx || candLines[0] || "";
-
-  const packed = [type, ufrag, pwd, fp, setup, cand].join("|");
-  log("packed SDP: "+packed.length+" chars (raw)");
-  log("  ufrag="+ufrag+" pwd="+pwd.length+"ch fp="+fp.length+"ch cand="+cand.slice(0,40)+"…");
-
-  const encoded = btoa(packed).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
-  log("encoded payload: "+encoded.length+" chars");
-  return encoded;
-}
-
-function unpackSDP(encoded) {
-  const b64 = encoded.replace(/-/g,"+").replace(/_/g,"/");
-  const packed = atob(b64);
-  log("unpacked raw: "+packed.length+" chars");
-  const [type, ufrag, pwd, fp, setup, cand] = packed.split("|");
-  const sdpType = type === "o" ? "offer" : "answer";
-
-  // Reconstruct a minimal but valid SDP
-  const sdp = [
-    "v=0",
-    "o=- 1 1 IN IP4 0.0.0.0",
-    "s=-",
-    "t=0 0",
-    "a=group:BUNDLE 0",
-    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
-    "c=IN IP4 0.0.0.0",
-    "a=ice-ufrag:"+ufrag,
-    "a=ice-pwd:"+pwd,
-    "a=ice-options:trickle",
-    "a=fingerprint:sha-256 "+fp,
-    "a=setup:"+setup,
-    "a=mid:0",
-    "a=sctp-port:5000",
-    "a=max-message-size:262144",
-    cand ? "a=candidate:"+cand : "",
-  ].filter(Boolean).join("\r\n") + "\r\n";
-
-  log("reconstructed SDP length: "+sdp.length);
-  return { type: sdpType, sdp };
-}
+window.onerror = (m,s,l) => log("ERR: "+m+" ("+s+":"+l+")", "err");
+window.onunhandledrejection = e => log("PROMISE: "+(e.reason?.message||e.reason), "err");
 
 // ─── QR DRAW ─────────────────────────────────────────────────────────────────
 function drawQR(canvasEl, text) {
-  log("drawQR: text length=" + text.length);
+  log("drawQR len="+text.length);
   try {
-    const size = Math.min(280, Math.floor(window.innerWidth * 0.72));
+    const size = Math.min(260, Math.floor(window.innerWidth * 0.7));
     canvasEl.width = size; canvasEl.height = size;
     const tmp = document.createElement("div");
     new QRCode(tmp, {
-      text,
-      width: size, height: size,
-      colorDark: "#000", colorLight: "#fff",
-      correctLevel: QRCode.CorrectLevel.M  // M beats L for damaged/glare reads, not too much bigger than L
+      text, width:size, height:size,
+      colorDark:"#000", colorLight:"#fff",
+      correctLevel: QRCode.CorrectLevel.M
     });
-    const generated = tmp.querySelector("canvas") || tmp.querySelector("img");
-    log("drawQR: generated element type=" + (generated ? generated.tagName : "null"));
-    if (!generated) { log("drawQR: nothing generated!", "err"); return; }
-    const c2 = canvasEl.getContext("2d");
-    if (generated.tagName === "CANVAS") {
-      c2.drawImage(generated, 0, 0, size, size);
-    } else {
-      const draw = () => c2.drawImage(generated, 0, 0, size, size);
-      generated.complete ? draw() : (generated.onload = draw);
-    }
-    log("drawQR: done", "ok");
-  } catch(e) { log("drawQR error: " + e.message, "err"); }
-}
-
-// ─── LOAD SCRIPT ─────────────────────────────────────────────────────────────
-const JSQR_URL = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
-
-function loadScript(src) {
-  return new Promise((res, rej) => {
-    if (document.querySelector('script[src="'+src+'"]')) { log("script already loaded: "+src); res(); return; }
-    log("loadScript: " + src);
-    const s = document.createElement("script");
-    s.src = src;
-    s.onload = () => { log("script loaded: " + src, "ok"); res(); };
-    s.onerror = e => { log("script FAILED: " + src, "err"); rej(new Error("Failed to load "+src)); };
-    document.head.appendChild(s);
-  });
+    const src = tmp.querySelector("canvas") || tmp.querySelector("img");
+    if (!src) { log("QR: no element generated", "err"); return; }
+    const draw = () => canvasEl.getContext("2d").drawImage(src,0,0,size,size);
+    src.tagName==="CANVAS" || src.complete ? draw() : (src.onload=draw);
+    log("drawQR ok", "ok");
+  } catch(e) { log("drawQR err: "+e.message, "err"); }
 }
 
 // ─── CANVAS / GAME ───────────────────────────────────────────────────────────
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 let W, H;
-function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
-window.addEventListener("resize", resize);
-resize();
+function resize() { W=canvas.width=window.innerWidth; H=canvas.height=window.innerHeight; }
+window.addEventListener("resize", resize); resize();
 
-const MAX_SCORE = 5;
-const PAD = { w: 120, h: 12, margin: 30 };
-let gameRunning = false;
-let gameResult = "";
-let role = null;
-let dc = null;
-let state = { ball:{x:0,y:0}, host:{x:0}, guest:{x:0}, score:{host:0,guest:0}, paused:true };
-let myX = 0, ballSpeed = 300, ballVx = 0, ballVy = 0;
+const MAX_SCORE=5, PAD={w:120,h:12,margin:30};
+let gameRunning=false, gameResult="", role=null, dc=null;
+let state={ball:{x:0,y:0},host:{x:0},guest:{x:0},score:{host:0,guest:0},paused:true};
+let myX=0, ballSpeed=300, ballVx=0, ballVy=0;
 
 function initState() {
-  state.ball.x = W/2; state.ball.y = H/2;
-  state.host.x = W/2; state.guest.x = W/2;
-  state.score = {host:0,guest:0};
-  state.paused = true;
-  ballSpeed = 300; myX = W/2;
+  state.ball.x=W/2; state.ball.y=H/2;
+  state.host.x=W/2; state.guest.x=W/2;
+  state.score={host:0,guest:0};
+  ballSpeed=300; myX=W/2;
   serveBall();
 }
 function serveBall() {
-  const angle = (Math.random()*Math.PI/3) - Math.PI/6;
-  const dir = Math.random() > 0.5 ? 1 : -1;
-  ballVx = Math.sin(angle); ballVy = Math.cos(angle)*dir;
-  state.ball.x = W/2; state.ball.y = H/2;
-  state.paused = true;
-  setTimeout(() => { state.paused = false; }, 800);
+  const a=(Math.random()*Math.PI/3)-Math.PI/6, d=Math.random()>.5?1:-1;
+  ballVx=Math.sin(a); ballVy=Math.cos(a)*d;
+  state.ball.x=W/2; state.ball.y=H/2;
+  state.paused=true; setTimeout(()=>{state.paused=false;},800);
 }
 function hostUpdate(dt) {
-  if (state.paused) return;
-  state.ball.x += ballVx * ballSpeed * dt;
-  state.ball.y += ballVy * ballSpeed * dt;
-  if (state.ball.x < 0 || state.ball.x > W) ballVx *= -1;
-  if (state.ball.y > H - PAD.margin - PAD.h && Math.abs(state.ball.x - state.host.x) < PAD.w/2) hitPaddle(state.host.x, -1);
-  if (state.ball.y < PAD.margin + PAD.h && Math.abs(state.ball.x - state.guest.x) < PAD.w/2) hitPaddle(state.guest.x, 1);
-  if (state.ball.y < 0) { state.score.host++;  checkWin(); serveBall(); }
-  if (state.ball.y > H)  { state.score.guest++; checkWin(); serveBall(); }
+  if(state.paused) return;
+  state.ball.x+=ballVx*ballSpeed*dt; state.ball.y+=ballVy*ballSpeed*dt;
+  if(state.ball.x<0||state.ball.x>W) ballVx*=-1;
+  if(state.ball.y>H-PAD.margin-PAD.h&&Math.abs(state.ball.x-state.host.x)<PAD.w/2) hitPad(state.host.x,-1);
+  if(state.ball.y<PAD.margin+PAD.h&&Math.abs(state.ball.x-state.guest.x)<PAD.w/2) hitPad(state.guest.x,1);
+  if(state.ball.y<0){state.score.host++;checkWin();serveBall();}
+  if(state.ball.y>H){state.score.guest++;checkWin();serveBall();}
 }
-function hitPaddle(px, dir) {
-  const off = (state.ball.x - px) / (PAD.w/2);
-  ballSpeed = Math.min(ballSpeed * 1.05, 900);
-  ballVx = Math.sin(off * Math.PI/3);
-  ballVy = Math.cos(off * Math.PI/3) * dir;
-  if (navigator.vibrate) navigator.vibrate(10);
+function hitPad(px,dir) {
+  const off=(state.ball.x-px)/(PAD.w/2);
+  ballSpeed=Math.min(ballSpeed*1.05,900);
+  ballVx=Math.sin(off*Math.PI/3); ballVy=Math.cos(off*Math.PI/3)*dir;
+  if(navigator.vibrate) navigator.vibrate(10);
 }
 function checkWin() {
-  if (state.score.host >= MAX_SCORE || state.score.guest >= MAX_SCORE) {
-    state.paused = true;
-    gameResult = state.score.host >= MAX_SCORE ? "host" : "guest";
-    setTimeout(() => { gameResult = ""; initState(); }, 2000);
+  if(state.score.host>=MAX_SCORE||state.score.guest>=MAX_SCORE) {
+    state.paused=true;
+    gameResult=state.score.host>=MAX_SCORE?"host":"guest";
+    setTimeout(()=>{gameResult="";initState();},2000);
   }
 }
 function draw() {
-  ctx.fillStyle = "#000"; ctx.fillRect(0,0,W,H);
-  if (!gameRunning) return;
-  ctx.fillStyle = "#fff";
-  ctx.setLineDash([10,10]);
-  ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2);
+  ctx.fillStyle="#000"; ctx.fillRect(0,0,W,H);
+  if(!gameRunning) return;
+  ctx.fillStyle="#fff";
+  ctx.setLineDash([10,10]); ctx.beginPath(); ctx.moveTo(0,H/2); ctx.lineTo(W,H/2);
   ctx.strokeStyle="#fff"; ctx.stroke(); ctx.setLineDash([]);
-  ctx.fillRect(state.host.x-PAD.w/2, H-PAD.margin-PAD.h, PAD.w, PAD.h);
-  ctx.fillRect(state.guest.x-PAD.w/2, PAD.margin, PAD.w, PAD.h);
-  ctx.beginPath(); ctx.arc(state.ball.x, state.ball.y, 8, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(state.host.x-PAD.w/2,H-PAD.margin-PAD.h,PAD.w,PAD.h);
+  ctx.fillRect(state.guest.x-PAD.w/2,PAD.margin,PAD.w,PAD.h);
+  ctx.beginPath(); ctx.arc(state.ball.x,state.ball.y,8,0,Math.PI*2); ctx.fill();
   ctx.font="20px monospace"; ctx.textAlign="center";
-  ctx.fillText(state.score.guest, W/2, 40);
-  ctx.fillText(state.score.host,  W/2, H-20);
-  if (gameResult) {
-    const won = (role==="host"&&gameResult==="host")||(role==="guest"&&gameResult==="guest");
-    ctx.font="bold 28px monospace";
-    ctx.fillText(won?"YOU WIN!":"YOU LOSE", W/2, H/2);
+  ctx.fillText(state.score.guest,W/2,40);
+  ctx.fillText(state.score.host,W/2,H-20);
+  if(gameResult) {
+    const won=(role==="host"&&gameResult==="host")||(role==="guest"&&gameResult==="guest");
+    ctx.font="bold 28px monospace"; ctx.fillText(won?"YOU WIN!":"YOU LOSE",W/2,H/2);
   }
 }
-let lastTime = 0;
+let lastTime=0;
 function loop(t) {
-  const dt = Math.min((t-lastTime)/1000, 0.05); lastTime = t;
-  if (gameRunning && role==="host") {
-    state.host.x = myX;
-    hostUpdate(dt);
-    if (dc && dc.readyState==="open") {
-      dc.send(JSON.stringify({type:"state", state, ballVx, ballVy, ballSpeed}));
-    }
+  const dt=Math.min((t-lastTime)/1000,0.05); lastTime=t;
+  if(gameRunning&&role==="host"){
+    state.host.x=myX; hostUpdate(dt);
+    if(dc&&dc.readyState==="open") dc.send(JSON.stringify({type:"state",state,ballVx,ballVy,ballSpeed}));
   }
-  draw();
-  requestAnimationFrame(loop);
+  draw(); requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
 
-canvas.addEventListener("touchstart", e=>moveMe(e.touches[0].clientX));
-canvas.addEventListener("touchmove",  e=>moveMe(e.touches[0].clientX));
-canvas.addEventListener("mousemove",  e=>moveMe(e.clientX));
+canvas.addEventListener("touchstart",e=>moveMe(e.touches[0].clientX));
+canvas.addEventListener("touchmove", e=>moveMe(e.touches[0].clientX));
+canvas.addEventListener("mousemove", e=>moveMe(e.clientX));
 function moveMe(x) {
-  if (!gameRunning) return;
-  myX = clamp(x, PAD.w/2, W-PAD.w/2);
-  if (role==="guest" && dc && dc.readyState==="open") dc.send(JSON.stringify({type:"input",x:myX}));
+  if(!gameRunning) return;
+  myX=clamp(x,PAD.w/2,W-PAD.w/2);
+  if(role==="guest"&&dc&&dc.readyState==="open") dc.send(JSON.stringify({type:"input",x:myX}));
+}
+
+// ─── SDP PACK / UNPACK ───────────────────────────────────────────────────────
+function extract(sdp,prefix) {
+  const l=sdp.split("\n").find(l=>l.trimStart().startsWith(prefix));
+  return l?l.trim().slice(prefix.length).trim():"";
+}
+function packSDP(sdpObj) {
+  const sdp=sdpObj.sdp;
+  const type  = sdpObj.type==="offer"?"o":"a";
+  const ufrag = extract(sdp,"a=ice-ufrag:");
+  const pwd   = extract(sdp,"a=ice-pwd:");
+  const fp    = extract(sdp,"a=fingerprint:").replace(/^sha-256 /i,"");
+  const setup = extract(sdp,"a=setup:");
+  const cands = sdp.split("\n").filter(l=>l.trimStart().startsWith("a=candidate:"))
+                    .map(l=>l.trim().slice("a=candidate:".length));
+  const cand  = cands.find(c=>c.includes("srflx"))||cands[0]||"";
+  const packed= [type,ufrag,pwd,fp,setup,cand].join("|");
+  log("packed="+packed.length+" chars");
+  return btoa(packed).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function unpackSDP(enc) {
+  const packed=atob(enc.replace(/-/g,"+").replace(/_/g,"/"));
+  log("unpacked="+packed.length+" chars");
+  const [type,ufrag,pwd,fp,setup,cand]=packed.split("|");
+  const sdp=[
+    "v=0","o=- 1 1 IN IP4 0.0.0.0","s=-","t=0 0",
+    "a=group:BUNDLE 0",
+    "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+    "c=IN IP4 0.0.0.0",
+    "a=ice-ufrag:"+ufrag,"a=ice-pwd:"+pwd,
+    "a=ice-options:trickle",
+    "a=fingerprint:sha-256 "+fp,
+    "a=setup:"+setup,"a=mid:0",
+    "a=sctp-port:5000","a=max-message-size:262144",
+    cand?"a=candidate:"+cand:""
+  ].filter(Boolean).join("\r\n")+"\r\n";
+  return {type:type==="o"?"offer":"answer", sdp};
 }
 
 // ─── WebRTC ───────────────────────────────────────────────────────────────────
-const RTC_CONFIG = { iceServers: [
+const RTC_CFG={iceServers:[
   {urls:"stun:stun.l.google.com:19302"},
   {urls:"stun:stun1.l.google.com:19302"}
 ]};
-let pc = null;
+let pc=null;
 
 function createPC() {
   log("createPC");
-  pc = new RTCPeerConnection(RTC_CONFIG);
-  pc.onicecandidate = e => log("icecandidate: "+(e.candidate ? e.candidate.type : "null (done)"));
-  pc.onicegatheringstatechange = () => log("iceGatheringState: "+pc.iceGatheringState);
-  pc.oniceconnectionstatechange = () => {
-    log("iceConnectionState: "+pc.iceConnectionState);
-    if (pc.iceConnectionState==="failed"||pc.iceConnectionState==="disconnected") log("Connection problem!", "err");
+  pc=new RTCPeerConnection(RTC_CFG);
+  pc.onicecandidate=e=>log("cand: "+(e.candidate?e.candidate.type:"null(done)"));
+  pc.onicegatheringstatechange=()=>log("iceGather: "+pc.iceGatheringState);
+  pc.oniceconnectionstatechange=()=>{
+    log("iceCon: "+pc.iceConnectionState);
+    if(pc.iceConnectionState==="failed") log("ICE failed!","err");
   };
-  pc.onsignalingstatechange = () => log("signalingState: "+pc.signalingState);
   return pc;
 }
-
-function waitForICE(pc, timeout=6000) {
-  return new Promise(res => {
-    if (pc.iceGatheringState === "complete") { log("ICE already complete"); return res(); }
-    const done = () => { log("ICE gathering complete", "ok"); res(); };
-    pc.onicegatheringstatechange = () => { if (pc.iceGatheringState==="complete") done(); };
-    setTimeout(() => { log("ICE gather timeout, continuing anyway"); res(); }, timeout);
+function waitICE(pc,ms=6000) {
+  return new Promise(res=>{
+    if(pc.iceGatheringState==="complete"){log("ICE already done");return res();}
+    pc.onicegatheringstatechange=()=>{if(pc.iceGatheringState==="complete"){log("ICE done","ok");res();}};
+    setTimeout(()=>{log("ICE timeout, continuing");res();},ms);
   });
+}
+
+// ── Scanner helper (nimiq) ────────────────────────────────────────────────────
+async function startScanner(videoEl, onResult) {
+  const Qs = await loadQrScanner();
+  log("creating QrScanner instance");
+  const scanner = new Qs(videoEl, result => {
+    log("QR scanned: len="+result.data.length, "ok");
+    scanner.stop();
+    scanner.destroy();
+    onResult(result.data);
+  }, {
+    returnDetailedScanResult: true,
+    preferredCamera: 'environment',
+    maxScansPerSecond: 5,
+    highlightScanRegion: true,
+    highlightCodeOutline: true,
+  });
+  try {
+    await scanner.start();
+    log("scanner started", "ok");
+
+    // Ask for continuous autofocus on Android
+    const track = videoEl.srcObject?.getVideoTracks?.()[0];
+    if (track) {
+      const caps = track.getCapabilities?.() || {};
+      log("focusModes: "+JSON.stringify(caps.focusMode||[]));
+      if (caps.focusMode?.includes("continuous")) {
+        await track.applyConstraints({advanced:[{focusMode:"continuous"}]});
+        log("focusMode=continuous applied","ok");
+      }
+    }
+  } catch(e) { log("scanner.start error: "+e.message,"err"); }
+  return scanner;
 }
 
 // ── HOST ──────────────────────────────────────────────────────────────────────
 async function startHost() {
   log("startHost");
-  role = "host";
-  showScreen("screen-host");
-  pc = createPC();
-  dc = pc.createDataChannel("pong");
-  log("dataChannel created");
+  role="host";
+  showScreen("s-host");
+  pc=createPC();
+  dc=pc.createDataChannel("pong");
   setupDC(dc);
 
-  log("createOffer…");
-  const offer = await pc.createOffer();
-  log("setLocalDescription…");
+  const offer=await pc.createOffer();
   await pc.setLocalDescription(offer);
-  log("waiting for ICE…");
-  await waitForICE(pc);
+  log("waiting ICE…");
+  await waitICE(pc);
 
-  const payload = packSDP(pc.localDescription);
-  log("final QR payload length: "+payload.length);
-
-  setEl("status-host", "Generating QR…");
-  drawQR(document.getElementById("qr-canvas"), payload);
-  setEl("status-host", "Show QR to guest, then tap below");
-  document.getElementById("btn-scan-guest").style.display = "block";
+  const payload=packSDP(pc.localDescription);
+  log("QR payload len="+payload.length);
+  setEl("host-hint","Show this QR to the other player");
+  drawQR(document.getElementById("qr-host"), payload);
+  setEl("st-host","Then tap SCAN GUEST QR");
+  document.getElementById("btn-scan-guest").style.display="block";
 }
 
-document.getElementById("btn-scan-guest").onclick = hostScanAnswer;
+document.getElementById("btn-scan-guest").onclick = async () => {
+  log("host: scan guest QR");
+  document.getElementById("btn-scan-guest").style.display="none";
+  document.getElementById("host-qr-box").style.display="none";
+  setEl("st-host","Scanning guest QR…");
 
-async function hostScanAnswer() {
-  log("hostScanAnswer");
-  await loadScript(JSQR_URL);
-  setEl("status-host","Opening camera…");
-
-  // Replace QR with video
-  document.getElementById("qr-wrap").style.display = "none";
-  const vid = document.createElement("video");
-  vid.id = "host-scan-video";
+  const area=document.getElementById("host-scan-area");
+  area.innerHTML="";
+  const vid=document.createElement("video");
   vid.setAttribute("autoplay",""); vid.setAttribute("playsinline",""); vid.setAttribute("muted","");
-  vid.style.cssText = "width:220px;height:220px;object-fit:cover;border:2px solid #fff;display:block;";
-  document.getElementById("screen-host").insertBefore(vid, document.getElementById("btn-scan-guest"));
+  vid.style.cssText="width:260px;height:260px;object-fit:cover;border:2px solid #fff;display:block;";
+  area.appendChild(vid);
 
-  let stream;
-  try {
-    log("getUserMedia (host)…");
-    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false});
-    vid.srcObject = stream;
-    log("host camera open", "ok");
-  } catch(e) { log("host camera error: "+e.name+" "+e.message, "err"); setEl("status-host","Camera error: "+e.message); return; }
-
-  setEl("status-host","Scanning guest QR…");
-  const tmp = document.createElement("canvas");
-  const tc = tmp.getContext("2d");
-
-  function scan() {
-    if (vid.readyState >= vid.HAVE_ENOUGH_DATA && vid.videoWidth > 0) {
-      tmp.width = vid.videoWidth; tmp.height = vid.videoHeight;
-      tc.drawImage(vid, 0, 0);
-      const img = tc.getImageData(0,0,tmp.width,tmp.height);
-      const code = jsQR(img.data, img.width, img.height);
-      if (code) {
-        log("host scanned guest QR, length="+code.data.length, "ok");
-        stream.getTracks().forEach(t=>t.stop());
-        vid.remove();
-        completeHostHandshake(code.data);
-        return;
-      }
-    }
-    requestAnimationFrame(scan);
-  }
-  requestAnimationFrame(scan);
-}
-
-async function completeHostHandshake(data) {
-  try {
-    log("completeHostHandshake");
-    const sdpObj = unpackSDP(data);
-    log("restored answer SDP length="+sdpObj.sdp.length);
-    await pc.setRemoteDescription(new RTCSessionDescription(sdpObj));
-    log("remote desc set", "ok");
-    setEl("status-host","Connecting…");
-  } catch(e) { log("completeHostHandshake error: "+e.message, "err"); }
-}
+  await startScanner(vid, async data => {
+    setEl("st-host","Connecting…");
+    area.innerHTML="";
+    try {
+      const sdpObj=unpackSDP(data);
+      log("host setRemoteDesc answer");
+      await pc.setRemoteDescription(new RTCSessionDescription(sdpObj));
+      log("host remote desc set","ok");
+    } catch(e){ log("host handshake err: "+e.message,"err"); }
+  });
+};
 
 // ── GUEST ─────────────────────────────────────────────────────────────────────
 async function startJoin() {
   log("startJoin");
-  role = "guest";
-  showScreen("screen-join");
-  await loadScript(JSQR_URL);
+  role="guest";
+  showScreen("s-join");
+  const vid=document.getElementById("scan-video");
 
-  const vid = document.getElementById("scan-video");
-  let stream;
-  try {
-    log("getUserMedia (guest)…");
-    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false});
-    vid.srcObject = stream;
-    log("guest camera open", "ok");
-    setEl("status-join","Scanning host QR…");
-  } catch(e) {
-    log("guest camera error: "+e.name+" "+e.message, "err");
-    setEl("status-join","Camera error: "+e.message);
-    return;
-  }
-
-  const tmp = document.createElement("canvas");
-  const tc = tmp.getContext("2d");
-
-  function scan() {
-    if (vid.readyState >= vid.HAVE_ENOUGH_DATA && vid.videoWidth > 0) {
-      tmp.width = vid.videoWidth; tmp.height = vid.videoHeight;
-      tc.drawImage(vid, 0, 0);
-      const img = tc.getImageData(0,0,tmp.width,tmp.height);
-      const code = jsQR(img.data, img.width, img.height);
-      if (code) {
-        log("guest scanned host QR, length="+code.data.length, "ok");
-        stream.getTracks().forEach(t=>t.stop());
-        vid.style.display = "none";
-        connectAsGuest(code.data);
-        return;
-      }
-    }
-    requestAnimationFrame(scan);
-  }
-  requestAnimationFrame(scan);
-}
-
-async function connectAsGuest(data) {
-  log("connectAsGuest");
-  try {
-    const sdpObj = unpackSDP(data);
-    log("restored SDP type="+sdpObj.type+" length="+sdpObj.sdp.length);
-    const payload = { sdp: sdpObj };
-    log("parsed host SDP, type="+payload.sdp.type);
-    pc = createPC();
-    pc.ondatachannel = e => { log("ondatachannel", "ok"); dc = e.channel; setupDC(dc); };
-
-    log("setRemoteDescription (offer)…");
-    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-    log("createAnswer…");
-    const answer = await pc.createAnswer();
-    log("setLocalDescription…");
-    await pc.setLocalDescription(answer);
-    log("waiting for ICE…");
-    await waitForICE(pc);
-
-    const answerPayload = packSDP(pc.localDescription);
-    log("answer QR payload length: "+answerPayload.length);
-
-    // Show answer QR
-    setEl("join-hint","Show this QR to the HOST");
-    document.getElementById("answer-qr-wrap").style.display = "block";
-    document.getElementById("answer-hint").style.display = "block";
-    drawQR(document.getElementById("answer-qr-canvas"), answerPayload);
-    setEl("status-join","Waiting for host to scan…");
-  } catch(e) { log("connectAsGuest error: "+e.message, "err"); }
+  await startScanner(vid, async data => {
+    document.getElementById("scan-region").style.display="none";
+    setEl("st-join","Generating answer…");
+    try {
+      const sdpObj=unpackSDP(data);
+      log("guest setRemoteDesc offer");
+      pc=createPC();
+      pc.ondatachannel=e=>{log("ondatachannel","ok");dc=e.channel;setupDC(dc);};
+      await pc.setRemoteDescription(new RTCSessionDescription(sdpObj));
+      const answer=await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await waitICE(pc);
+      const payload=packSDP(pc.localDescription);
+      log("answer QR len="+payload.length);
+      setEl("join-hint","Show this QR to the HOST");
+      document.getElementById("answer-qr-box").style.display="block";
+      drawQR(document.getElementById("qr-answer"), payload);
+      setEl("st-join","Waiting for host to scan…");
+    } catch(e){ log("guest err: "+e.message,"err"); }
+  });
 }
 
 // ── DataChannel ───────────────────────────────────────────────────────────────
-function setupDC(channel) {
-  log("setupDC: "+channel.label);
-  channel.onopen = () => {
-    log("dataChannel open!", "ok");
-    hideUI();
-    initState();
-    myX = W/2;
-    gameRunning = true;
+function setupDC(ch) {
+  log("setupDC");
+  ch.onopen=()=>{
+    log("DC open!","ok");
+    hideUI(); initState(); myX=W/2; gameRunning=true;
   };
-  channel.onclose = () => log("dataChannel closed", "err");
-  channel.onerror = e => log("dataChannel error: "+e, "err");
-
-  channel.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    if (msg.type==="state" && role==="guest") {
-      const s = msg.state;
-      state.guest.x = s.guest.x;
-      state.host.x  = s.host.x;
-      state.score   = {host: s.score.guest, guest: s.score.host};
-      state.ball.x  = s.ball.x;
-      state.ball.y  = H - s.ball.y;
-      state.paused  = s.paused;
-      gameResult    = "";
-      if (s.paused && s.score.host >= MAX_SCORE)  gameResult = "guest";
-      if (s.paused && s.score.guest >= MAX_SCORE) gameResult = "host";
-      // Swap so guest sees themselves at bottom
-      const tmp = {...state.host}; state.host = {...state.guest}; state.guest = tmp;
-    } else if (msg.type==="input" && role==="host") {
-      state.guest.x = msg.x;
+  ch.onclose=()=>log("DC closed","err");
+  ch.onerror=e=>log("DC error: "+e,"err");
+  ch.onmessage=e=>{
+    const msg=JSON.parse(e.data);
+    if(msg.type==="state"&&role==="guest"){
+      const s=msg.state;
+      state.guest.x=s.guest.x; state.host.x=s.host.x;
+      state.score={host:s.score.guest,guest:s.score.host};
+      state.ball.x=s.ball.x; state.ball.y=H-s.ball.y;
+      state.paused=s.paused; gameResult="";
+      if(s.paused&&s.score.host>=MAX_SCORE)  gameResult="guest";
+      if(s.paused&&s.score.guest>=MAX_SCORE) gameResult="host";
+      const tmp={...state.host}; state.host={...state.guest}; state.guest=tmp;
+    } else if(msg.type==="input"&&role==="host"){
+      state.guest.x=msg.x;
     }
   };
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-function showScreen(id) {
-  ["screen-home","screen-host","screen-join"].forEach(s => {
-    document.getElementById(s).style.display = "none";
-  });
-  document.getElementById(id).style.display = "flex";
+function showScreen(id){
+  ["s-home","s-host","s-join"].forEach(s=>document.getElementById(s).style.display="none");
+  document.getElementById(id).style.display="flex";
 }
-function hideUI()    { document.getElementById("ui").style.display = "none"; }
-function setEl(id,t) { const el=document.getElementById(id); if(el) el.textContent=t; }
-function clamp(v,mn,mx) { return Math.max(mn,Math.min(mx,v)); }
+function hideUI(){ document.getElementById("ui").style.display="none"; }
+function setEl(id,t){ const e=document.getElementById(id); if(e) e.textContent=t; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
-document.getElementById("btn-host").onclick = startHost;
-document.getElementById("btn-join").onclick  = startJoin;
+document.getElementById("btn-host").onclick=startHost;
+document.getElementById("btn-join").onclick=startJoin;
 
-log("page loaded, qrcode lib="+(typeof QRCode), "ok");
-log("RTCPeerConnection="+(typeof RTCPeerConnection));
-log("mediaDevices="+(typeof navigator.mediaDevices));
+log("ready | QRCode="+(typeof QRCode)+" | RTC="+(typeof RTCPeerConnection)+" | media="+(typeof navigator.mediaDevices));
 </script>
 </body>
 </html>
