@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Pong P2P</title>
+<title>Pong P2P Debug</title>
 
 <style>
 body {
@@ -16,117 +17,194 @@ body {
 #ui { padding:15px; }
 canvas { display:none; }
 
-video {
+textarea {
   width:100%;
-  display:none;
+  height:90px;
+  background:#111;
+  color:white;
+  border:1px solid #333;
+  margin-top:5px;
+}
+
+button {
+  width:100%;
+  padding:10px;
+  margin-top:5px;
+  background:white;
+  color:black;
+  border:none;
+}
+
+#log {
+  position:fixed;
+  bottom:0;
+  left:0;
+  width:100%;
+  max-height:150px;
+  overflow:auto;
+  background:#000;
+  font-size:10px;
+  border-top:1px solid #333;
 }
 </style>
 </head>
 <body>
 
 <div id="ui">
-  <button onclick="host()">Host</button>
-  <button onclick="join()">Join</button>
+  <button onclick="host()">1️⃣ Host Game</button>
+  <button onclick="join()">1️⃣ Join Game</button>
 
-  <div id="qr"></div>
-  <video id="cam" autoplay></video>
+  <p>📤 Send this:</p>
+  <textarea id="out"></textarea>
+  <button onclick="copyOut()">Copy</button>
+
+  <p>📥 Paste received:</p>
+  <textarea id="in"></textarea>
+  <button onclick="processSignal()">Process</button>
 </div>
 
 <canvas id="game"></canvas>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<div id="log"></div>
 
 <script>
-let pc, dc, isHost=false;
-let opponentTargetX=0;
-let opponentX=0;
+// --- LOG ---
+function log(msg){
+  const el=document.getElementById("log");
+  el.innerHTML += msg + "<br>";
+  el.scrollTop = el.scrollHeight;
+}
+
+// --- GLOBAL ERROR CAPTURE ---
+window.onerror = function(message, source, lineno, colno, error) {
+  log(`❌ JS Error: ${message} @${lineno}:${colno}`);
+};
+
+window.onunhandledrejection = function(event) {
+  log(`❌ Promise Error: ${event.reason}`);
+};
 
 // --- WEBRTC ---
-function setup() {
-  pc = new RTCPeerConnection();
+let pc, dc, isHost=false;
 
-  pc.onicecandidate = e=>{
-    if(!e.candidate){
-      if(isHost) showQR(JSON.stringify(pc.localDescription));
-    }
-  };
+function setup(){
+  try {
+    log("🟡 Creating RTCPeerConnection...");
+    pc = new RTCPeerConnection();
 
-  pc.ondatachannel = e=>{
-    dc=e.channel;
-    setupDC();
-  };
+    pc.onicecandidate = e=>{
+      if(!e.candidate){
+        log("✅ ICE gathering complete");
+        out.value = JSON.stringify(pc.localDescription);
+      } else {
+        log("🧊 ICE candidate...");
+      }
+    };
+
+    pc.onconnectionstatechange = ()=>{
+      log("🔗 Connection: " + pc.connectionState);
+    };
+
+    pc.oniceconnectionstatechange = ()=>{
+      log("🧊 ICE state: " + pc.iceConnectionState);
+    };
+
+    pc.ondatachannel = e=>{
+      log("📡 Data channel received");
+      dc = e.channel;
+      setupDC();
+    };
+
+  } catch(err){
+    log("❌ setup error: " + err);
+  }
 }
 
 function setupDC(){
-  dc.onopen=()=>startGame();
-  dc.onmessage=e=>handle(JSON.parse(e.data));
+  try {
+    dc.onopen = ()=>{
+      log("🟢 Data channel open");
+      startGame();
+    };
+
+    dc.onmessage = e=>{
+      log("⬇️ " + e.data);
+      handle(JSON.parse(e.data));
+    };
+
+  } catch(err){
+    log("❌ setupDC error: " + err);
+  }
 }
 
+// --- SIGNALING ---
 async function host(){
-  isHost=true;
-  setup();
+  try {
+    log("🚀 Host clicked");
 
-  dc = pc.createDataChannel("g");
-  setupDC();
+    isHost=true;
+    setup();
 
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
+    log("📡 Creating data channel...");
+    dc = pc.createDataChannel("g");
+    setupDC();
+
+    log("📝 Creating offer...");
+    const offer = await pc.createOffer();
+
+    log("📌 Setting local description...");
+    await pc.setLocalDescription(offer);
+
+    log("📤 Offer ready (waiting ICE)...");
+  } catch (err) {
+    log("❌ Host error: " + err);
+  }
 }
 
 async function join(){
-  setup();
-  startCamera();
+  try {
+    log("🤝 Join clicked");
+    setup();
+  } catch(err){
+    log("❌ Join error: " + err);
+  }
 }
 
-// --- QR ---
-function showQR(data){
-  document.getElementById("qr").innerHTML="";
-  new QRCode(document.getElementById("qr"), data);
+async function processSignal(){
+  try {
+    const data = JSON.parse(in.value);
+
+    if(data.type==="offer"){
+      log("📥 Received offer");
+
+      await pc.setRemoteDescription(data);
+
+      log("📝 Creating answer...");
+      const answer = await pc.createAnswer();
+
+      await pc.setLocalDescription(answer);
+
+      log("📤 Answer ready (waiting ICE)");
+    } else {
+      log("📥 Received answer");
+      await pc.setRemoteDescription(data);
+    }
+  } catch(err){
+    log("❌ processSignal error: " + err);
+  }
 }
 
-async function startCamera(){
-  const video=document.getElementById("cam");
-  video.style.display="block";
-
-  const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
-  video.srcObject=stream;
-
-  const canvas=document.createElement("canvas");
-  const ctx=canvas.getContext("2d");
-
-  setInterval(()=>{
-    canvas.width=video.videoWidth;
-    canvas.height=video.videoHeight;
-    ctx.drawImage(video,0,0);
-
-    try{
-      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code=jsQR(img.data,canvas.width,canvas.height);
-
-      if(code){
-        connect(code.data);
-        video.srcObject.getTracks().forEach(t=>t.stop());
-        video.style.display="none";
-      }
-    }catch{}
-  },300);
-}
-
-// --- CONNECT ---
-async function connect(data){
-  const offer=JSON.parse(data);
-  await pc.setRemoteDescription(offer);
-
-  const answer=await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-
-  showQR(JSON.stringify(answer));
+function copyOut(){
+  navigator.clipboard.writeText(out.value);
+  log("📋 Copied to clipboard");
 }
 
 // --- GAME ---
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
+
 let W,H;
+let opponentTargetX=0;
+let opponentX=0;
 
 let player={x:0};
 let opponent={x:0};
@@ -143,6 +221,8 @@ function resize(){
 addEventListener("resize",resize);
 
 function startGame(){
+  log("🎮 Game started");
+
   document.getElementById("ui").style.display="none";
   canvas.style.display="block";
 
@@ -164,7 +244,10 @@ canvas.addEventListener("touchmove",e=>{
 
 // --- NETWORK ---
 function send(d){
-  if(dc?.readyState==="open") dc.send(JSON.stringify(d));
+  if(dc?.readyState==="open"){
+    dc.send(JSON.stringify(d));
+    log("⬆️ " + JSON.stringify(d));
+  }
 }
 
 function handle(d){
@@ -194,7 +277,6 @@ function resetBall(){
 }
 
 function update(dt){
-  // smooth opponent
   opponentX += (opponentTargetX - opponentX) * 10 * dt;
   opponent.x = opponentX;
 
@@ -205,12 +287,10 @@ function update(dt){
 
   if(ball.x<0||ball.x>W) ball.vx*=-1;
 
-  // bottom paddle (me)
   if(ball.y>H-40 && Math.abs(ball.x-player.x)<60){
     hit(player.x,-1);
   }
 
-  // top paddle (them)
   if(ball.y<40 && Math.abs(ball.x-opponent.x)<60){
     hit(opponent.x,1);
   }
@@ -248,16 +328,13 @@ function draw(){
 
   ctx.fillStyle="white";
 
-  // paddles
   ctx.fillRect(player.x-60,H-30,120,10);
   ctx.fillRect(opponent.x-60,20,120,10);
 
-  // ball
   ctx.beginPath();
   ctx.arc(ball.x,ball.y,8,0,Math.PI*2);
   ctx.fill();
 
-  // score
   ctx.textAlign="center";
   ctx.font="20px monospace";
   ctx.fillText(score.them,W/2,40);
@@ -276,9 +353,6 @@ function loop(t){
   requestAnimationFrame(loop);
 }
 </script>
-
-<!-- QR SCANNER LIB -->
-<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
 
 </body>
 </html>
