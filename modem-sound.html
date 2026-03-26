@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sound Link LOCKED</title>
+<title>DTMF Sound Link</title>
 
 <style>
 body {
-  margin:0;
   background:black;
   color:white;
   font-family:monospace;
   text-align:center;
+  margin:0;
 }
 #ui { padding:15px; }
 #log, #bits {
-  font-size:11px;
+  font-size:12px;
   max-height:160px;
   overflow:auto;
   background:#111;
@@ -28,88 +28,88 @@ body {
 <body>
 
 <div id="ui">
-  <button onclick="startSender()">Sender</button>
-  <button onclick="startReceiver()">Receiver</button>
+  <button onclick="send()">Sender</button>
+  <button onclick="receive()">Receiver</button>
 </div>
 
-<div id="bits">Idle</div>
+<div id="bits"></div>
 <div id="log"></div>
 
 <script>
-// ===== CONFIG =====
-const SYMBOL_TIME = 90; // 🔥 stable
-const SAMPLE_OFFSET = 45; // middle of symbol
-
-const FREQS = {
-  "00": 900,
-  "01": 1300,
-  "10": 1700,
-  "11": 2100
+// ===== DTMF MAP =====
+const DTMF = {
+  "1":[697,1209],"2":[697,1336],"3":[697,1477],"A":[697,1633],
+  "4":[770,1209],"5":[770,1336],"6":[770,1477],"B":[770,1633],
+  "7":[852,1209],"8":[852,1336],"9":[852,1477],"C":[852,1633],
+  "*":[941,1209],"0":[941,1336],"#":[941,1477],"D":[941,1633]
 };
 
-const START_FREQ = 2600;
-const END_FREQ = 3000;
-
-// ===== LOG =====
-const logEl = document.getElementById("log");
-function log(m){
-  logEl.innerHTML += m + "<br>";
-  logEl.scrollTop = logEl.scrollHeight;
-}
+const SYMBOLS = Object.keys(DTMF);
 
 // ===== UTILS =====
-function strToBits(str){
-  return str.split("").map(c =>
-    c.charCodeAt(0).toString(2).padStart(8,"0")
+function strToHex(str){
+  return [...str].map(c =>
+    c.charCodeAt(0).toString(16).padStart(2,"0")
   ).join("");
 }
 
-function bitsToStr(bits){
+function hexToStr(hex){
   let out="";
-  for(let i=0;i<bits.length;i+=8){
-    out+=String.fromCharCode(parseInt(bits.slice(i,i+8),2));
+  for(let i=0;i<hex.length;i+=2){
+    out+=String.fromCharCode(parseInt(hex.slice(i,i+2),16));
   }
   return out;
 }
 
 // ===== SENDER =====
-async function startSender(){
-  const msg = prompt("Message", "HELLO");
+async function send(){
+  const msg = prompt("Message","HELLO");
   if(!msg) return;
 
-  log("⏳ 2s...");
-  await sleep(2000);
+  const hex = strToHex(msg);
 
   const ctx = new AudioContext();
-  const osc = ctx.createOscillator();
-  osc.type="sine";
-  osc.connect(ctx.destination);
-  osc.start();
+
+  function playTone(f1,f2){
+    const o1 = ctx.createOscillator();
+    const o2 = ctx.createOscillator();
+
+    o1.frequency.value=f1;
+    o2.frequency.value=f2;
+
+    o1.connect(ctx.destination);
+    o2.connect(ctx.destination);
+
+    o1.start();
+    o2.start();
+
+    return [o1,o2];
+  }
+
+  await sleep(1000);
 
   // START
-  osc.frequency.value = START_FREQ;
-  await sleep(600);
+  let tones = playTone(...DTMF["A"]);
+  await sleep(300);
+  tones.forEach(o=>o.stop());
 
-  const bits = strToBits(msg);
-
-  for(let i=0;i<bits.length;i+=2){
-    const chunk = bits.slice(i,i+2).padEnd(2,"0");
-    osc.frequency.value = FREQS[chunk];
-    await sleep(SYMBOL_TIME);
+  for(let c of hex){
+    const symbol = SYMBOLS[parseInt(c,16)];
+    tones = playTone(...DTMF[symbol]);
+    await sleep(120);
+    tones.forEach(o=>o.stop());
+    await sleep(40);
   }
 
   // END
-  osc.frequency.value = END_FREQ;
-  await sleep(600);
-
-  osc.stop();
-  log("📤 Done");
+  tones = playTone(...DTMF["D"]);
+  await sleep(300);
+  tones.forEach(o=>o.stop());
 }
 
 // ===== RECEIVER =====
-async function startReceiver(){
+async function receive(){
   const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-
   const ctx = new AudioContext();
   const src = ctx.createMediaStreamSource(stream);
 
@@ -119,81 +119,66 @@ async function startReceiver(){
 
   const data = new Uint8Array(analyser.frequencyBinCount);
 
-  let bits = "";
+  let collecting=false;
+  let hex="";
 
-  log("🎧 Listening...");
-
-  function getFreq(){
+  function detect(){
     analyser.getByteFrequencyData(data);
 
-    let max=0,iMax=0;
+    let peaks = [];
+
     for(let i=0;i<data.length;i++){
-      if(data[i]>max){
-        max=data[i];
-        iMax=i;
+      if(data[i] > 150){
+        peaks.push(i * ctx.sampleRate / (data.length*2));
       }
     }
 
-    return iMax * ctx.sampleRate / (data.length*2);
-  }
+    let best=null;
 
-  // ===== WAIT FOR START =====
-  while(true){
-    const f = getFreq();
-    if(Math.abs(f - START_FREQ) < 150){
-      log("🚀 START LOCKED");
-      break;
-    }
-    await sleep(20);
-  }
+    for(let key in DTMF){
+      const [f1,f2]=DTMF[key];
 
-  // 🔥 settle
-  await sleep(300);
+      const match1 = peaks.some(p=>Math.abs(p-f1)<40);
+      const match2 = peaks.some(p=>Math.abs(p-f2)<40);
 
-  // ===== MAIN LOOP =====
-  while(true){
-
-    // sample at center of symbol
-    await sleep(SAMPLE_OFFSET);
-
-    const freq = getFreq();
-
-    // END
-    if(Math.abs(freq - END_FREQ) < 150){
-      log("🏁 END");
-      break;
-    }
-
-    // decode
-    let best=null, min=9999;
-
-    for(let k in FREQS){
-      const d = Math.abs(freq - FREQS[k]);
-      if(d < min){
-        min = d;
-        best = k;
+      if(match1 && match2){
+        best = key;
+        break;
       }
     }
 
-    bits += best;
+    if(best){
 
-    document.getElementById("bits").innerText =
-`Freq: ${Math.floor(freq)} Hz
+      if(best==="A"){
+        collecting=true;
+        hex="";
+        log("🚀 START");
+      }
+      else if(best==="D"){
+        log("🏁 END");
+        log("📥 "+hexToStr(hex));
+        stream.getTracks().forEach(t=>t.stop());
+        return;
+      }
+      else if(collecting){
+        hex += SYMBOLS.indexOf(best).toString(16);
+      }
 
-Bits:
-${bits}
+      document.getElementById("bits").innerText =
+        "HEX:\n"+hex+"\n\nTEXT:\n"+hexToStr(hex);
+    }
 
-Decoded:
-${bitsToStr(bits)}`;
-
-    // wait remainder of symbol
-    await sleep(SYMBOL_TIME - SAMPLE_OFFSET);
+    requestAnimationFrame(detect);
   }
 
-  const msg = bitsToStr(bits);
-  log("📥 " + msg);
+  detect();
+}
 
-  stream.getTracks().forEach(t=>t.stop());
+// ===== LOG =====
+function log(m){
+  const el=document.getElementById("log");
+  el.innerHTML += m+"<br>";
+  el.scrollTop=el.scrollHeight;
 }
 
 function sleep(ms){
