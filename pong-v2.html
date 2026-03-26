@@ -2,27 +2,22 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Pong Visual Link</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pong Optical MAX</title>
 
 <style>
-body {
-  margin:0;
-  background:black;
-  color:white;
-  font-family:monospace;
-  overflow:hidden;
-  text-align:center;
-}
+body { margin:0; background:black; color:white; font-family:monospace; text-align:center;}
 #ui { padding:15px; }
 canvas { display:none; }
 video { width:100%; display:none; }
 
 #flash {
   width:100vw;
-  height:50vh;
+  height:40vh;
   display:none;
 }
+
+#progress { margin-top:10px; }
 
 #log {
   position:fixed;
@@ -41,6 +36,7 @@ video { width:100%; display:none; }
 <div id="ui">
   <button onclick="host()">Host</button>
   <button onclick="join()">Join</button>
+  <div id="progress"></div>
 </div>
 
 <div id="flash"></div>
@@ -49,20 +45,21 @@ video { width:100%; display:none; }
 <div id="log"></div>
 
 <script>
+// --- CONFIG ---
+const GRID = 6; // 6x6 grid = 36 bits per frame
+const FRAME_BITS = GRID * GRID;
+const PREAMBLE = "10101010101010101010101010101010";
+
 // --- LOG ---
 const logEl = document.getElementById("log");
-function log(msg){
-  logEl.innerHTML += msg + "<br>";
-  logEl.scrollTop = logEl.scrollHeight;
-}
+function log(m){ logEl.innerHTML+=m+"<br>"; logEl.scrollTop=logEl.scrollHeight; }
 
-// --- ENCODING ---
+// --- BIT UTILS ---
 function strToBits(str){
   return str.split("").map(c =>
     c.charCodeAt(0).toString(2).padStart(8,"0")
   ).join("");
 }
-
 function bitsToStr(bits){
   let out="";
   for(let i=0;i<bits.length;i+=8){
@@ -71,81 +68,133 @@ function bitsToStr(bits){
   return out;
 }
 
-// --- FLASH SEND ---
-async function flashData(data){
-  log("📤 Flashing data...");
-  const bits = strToBits(data);
+// --- PROTOCOL ---
+function buildPayload(str){
+  const data = strToBits(str);
+  const len = data.length.toString(2).padStart(32,"0");
+  return PREAMBLE + len + data;
+}
 
+// --- FLASH GRID ---
+async function flashData(str){
+  const bits = buildPayload(str);
   const flash = document.getElementById("flash");
+  const progress = document.getElementById("progress");
+
   flash.style.display="block";
 
-  for(let i=0;i<bits.length;i++){
-    flash.style.background = bits[i]==="1" ? "white" : "black";
-    await sleep(30);
+  let i=0;
+
+  while(i < bits.length){
+    const chunk = bits.slice(i, i+FRAME_BITS).padEnd(FRAME_BITS,"0");
+
+    flash.innerHTML="";
+    flash.style.display="grid";
+    flash.style.gridTemplateColumns = `repeat(${GRID},1fr)`;
+    flash.style.gridTemplateRows = `repeat(${GRID},1fr)`;
+
+    for(let b of chunk){
+      const div=document.createElement("div");
+      div.style.background = b==="1" ? "white" : "black";
+      flash.appendChild(div);
+    }
+
+    i += FRAME_BITS;
+    progress.innerText = `Sending: ${Math.floor(i/bits.length*100)}%`;
+
+    await sleep(16);
   }
 
   flash.style.display="none";
-  log("✅ Flash done");
+  progress.innerText="Send done";
 }
 
-function sleep(ms){
-  return new Promise(r=>setTimeout(r,ms));
-}
-
-// --- CAMERA RECEIVE ---
+// --- RECEIVE ---
 async function receiveData(){
-  log("📥 Starting camera decode");
-
   const video = document.getElementById("cam");
+  const progress = document.getElementById("progress");
+
   video.style.display="block";
 
   const stream = await navigator.mediaDevices.getUserMedia({
     video:{facingMode:"environment"}
   });
 
-  video.srcObject = stream;
+  video.srcObject=stream;
 
   const canvas=document.createElement("canvas");
   const ctx=canvas.getContext("2d");
 
   let bits="";
-  let last=null;
+  let found=false;
+  let expectedLen=null;
 
   return new Promise(resolve=>{
-    const loop = setInterval(()=>{
+    const loop=setInterval(()=>{
       if(video.videoWidth===0) return;
 
       canvas.width=video.videoWidth;
       canvas.height=video.videoHeight;
+
       ctx.drawImage(video,0,0);
 
-      const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-      let sum=0;
+      const cellW = canvas.width / GRID;
+      const cellH = canvas.height / GRID;
 
-      for(let i=0;i<img.data.length;i+=40){
-        sum += img.data[i];
+      let chunk="";
+
+      for(let y=0;y<GRID;y++){
+        for(let x=0;x<GRID;x++){
+
+          const cx = Math.floor((x+0.5)*cellW);
+          const cy = Math.floor((y+0.5)*cellH);
+
+          const pixel = ctx.getImageData(cx,cy,1,1).data;
+
+          const luminance = (pixel[0] + pixel[1] + pixel[2]) / 3;
+
+          chunk += luminance > 128 ? "1" : "0";
+        }
       }
 
-      const bright = sum > (img.data.length*2);
+      bits += chunk;
 
-      if(last!==bright){
-        bits += bright ? "1" : "0";
-        last = bright;
+      // --- SYNC ---
+      if(!found && bits.includes(PREAMBLE)){
+        log("📡 Sync locked");
+        bits = bits.split(PREAMBLE)[1];
+        found=true;
       }
 
-      // crude stop condition
-      if(bits.length > 20000){
-        clearInterval(loop);
-        video.srcObject.getTracks().forEach(t=>t.stop());
-        video.style.display="none";
-
-        log("📥 Bits received: "+bits.length);
-        resolve(bitsToStr(bits));
+      // --- LENGTH ---
+      if(found && expectedLen===null && bits.length>=32){
+        expectedLen = parseInt(bits.slice(0,32),2);
+        bits = bits.slice(32);
+        log("📏 Expect bits: "+expectedLen);
       }
 
-    },30);
+      // --- PROGRESS ---
+      if(expectedLen!==null){
+        progress.innerText = `Receiving: ${Math.floor(bits.length/expectedLen*100)}%`;
+
+        if(bits.length >= expectedLen){
+          clearInterval(loop);
+
+          stream.getTracks().forEach(t=>t.stop());
+          video.style.display="none";
+
+          log("📥 Done");
+
+          const dataBits = bits.slice(0,expectedLen);
+          resolve(bitsToStr(dataBits));
+        }
+      }
+
+    },16);
   });
 }
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
 // --- WEBRTC ---
 let pc, dc, isHost=false;
@@ -163,7 +212,7 @@ function setup(){
 
 function setupDC(){
   dc.onopen = ()=>{
-    log("🟢 Connected!");
+    log("🟢 Connected");
     startGame();
   };
 
@@ -183,15 +232,13 @@ async function host(){
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
 
-  await sleep(1000);
-
+  await sleep(500);
   await flashData(JSON.stringify(pc.localDescription));
 
-  log("📡 Waiting for answer...");
+  log("📡 Waiting answer...");
   const answerStr = await receiveData();
 
-  const answer = JSON.parse(answerStr);
-  await pc.setRemoteDescription(answer);
+  await pc.setRemoteDescription(JSON.parse(answerStr));
 }
 
 // --- JOIN ---
@@ -199,19 +246,16 @@ async function join(){
   setup();
 
   const offerStr = await receiveData();
-  const offer = JSON.parse(offerStr);
-
-  await pc.setRemoteDescription(offer);
+  await pc.setRemoteDescription(JSON.parse(offerStr));
 
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
 
-  await sleep(1000);
-
+  await sleep(500);
   await flashData(JSON.stringify(pc.localDescription));
 }
 
-// --- GAME (same as before) ---
+// --- GAME (unchanged) ---
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
 
