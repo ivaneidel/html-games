@@ -726,9 +726,21 @@ function drawUnits(){
     var def=UD[u.type],s=w2s(u.x,u.y),sx=s.sx,sy=s.sy,r=def.size*cam.zoom;
     var sel=selectedIds.has(u.id);
     if(sel){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(sx,sy,r+4,0,Math.PI*2);ctx.stroke();}
+    // body
     ctx.fillStyle=def.color;ctx.beginPath();ctx.arc(sx,sy,r,0,Math.PI*2);ctx.fill();
+    // inner shading
     ctx.fillStyle='rgba(0,0,0,0.22)';ctx.beginPath();ctx.arc(sx-r*.2,sy-r*.2,r*.35,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle=u.team===0?'#4fc3f7':'#ef5350';ctx.beginPath();ctx.arc(sx+r*.55,sy-r*.55,r*.28,0,Math.PI*2);ctx.fill();
+    // team indicator: blue shield on player, red spike on enemy
+    if(u.team===0){
+      // small blue shield above unit
+      ctx.fillStyle='#1a6fcf';
+      ctx.beginPath();ctx.moveTo(sx,sy-r-2);ctx.lineTo(sx-r*.45,sy-r-2-r*.5);ctx.lineTo(sx+r*.45,sy-r-2-r*.5);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#4fc3f7';ctx.fillRect(sx-r*.12,sy-r-2-r*.45,r*.24,r*.35);
+    }else{
+      // red spike above enemy
+      ctx.fillStyle='#c0201a';
+      ctx.beginPath();ctx.moveTo(sx,sy-r-r*.7);ctx.lineTo(sx-r*.3,sy-r);ctx.lineTo(sx+r*.3,sy-r);ctx.closePath();ctx.fill();
+    }
     if(u.hp<def.maxHp){var hp=u.hp/def.maxHp;ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(sx-r,sy+r+2,r*2,3);ctx.fillStyle=hp>.5?'#4caf50':hp>.25?'#ff9800':'#f44336';ctx.fillRect(sx-r,sy+r+2,r*2*hp,3);}
     if(u.carrying&&u.carryAmt>0&&cam.zoom>0.7){
       var icons={food:'🌾',wood:'🪵',stone:'⛏️',gold:'🪙'};
