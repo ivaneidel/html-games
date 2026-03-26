@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Pong WebRTC</title>
+<style>
+  html, body { margin:0; padding:0; background:#000; overflow:hidden; touch-action:none; font-family:monospace; color:#fff; }
+  canvas { display:block; }
+  #ui {
+    position:fixed; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px;
+    background:rgba(0,0,0,0.85);
+  }
+  #ui h1 { margin:0; font-size:clamp(20px,5vw,32px); letter-spacing:4px; }
+  #ui p { margin:0; font-size:14px; opacity:0.7; text-align:center; max-width:320px; }
+  button {
+    background:#fff; color:#000; border:none; padding:12px 32px;
+    font-family:monospace; font-size:16px; cursor:pointer; letter-spacing:2px;
+  }
+  button:hover { background:#ccc; }
+  #qr-wrap { background:#fff; padding:12px; display:none; }
+  #qr-wrap canvas { display:block; }
+  #scan-wrap { display:none; flex-direction:column; align-items:center; gap:8px; }
+  #scan-wrap video { width:260px; height:260px; object-fit:cover; border:2px solid #fff; }
+  #status { font-size:13px; opacity:0.8; text-align:center; }
+  .btn-row { display:flex; gap:12px; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="ui">
+  <h1>PONG</h1>
+  <div id="screen-home">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;">
+      <div class="btn-row">
+        <button id="btn-host">HOST</button>
+        <button id="btn-join">JOIN</button>
+      </div>
+    </div>
+  </div>
+  <div id="screen-host" style="display:none;flex-direction:column;align-items:center;gap:10px;">
+    <p>Show this QR code to the other player</p>
+    <div id="qr-wrap"><canvas id="qr-canvas"></canvas></div>
+    <div id="status">Waiting for connection…</div>
+  </div>
+  <div id="screen-join" style="display:none;flex-direction:column;align-items:center;gap:10px;">
+    <p>Point your camera at the host's QR code</p>
+    <div id="scan-wrap">
+      <video id="scan-video" autoplay playsinline muted></video>
+    </div>
+    <div id="status2">Starting camera…</div>
+  </div>
+</div>
+
+<!-- qrcode.js (pure JS, no server needed) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+// ─── QR Generator wrapper ─────────────────────────────────────────────────────
+function drawQR(canvasEl, text) {
+  // QRCode lib can target a canvas directly
+  new QRCode(canvasEl, {
+    text,
+    width: 240,
+    height: 240,
+    colorDark: "#000",
+    colorLight: "#fff",
+    correctLevel: QRCode.CorrectLevel.L
+  });
+}
+
+// ─── QR Scanner (jsQR via CDN) ────────────────────────────────────────────────
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+// ─── CANVAS / GAME SETUP ─────────────────────────────────────────────────────
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+let W, H;
+function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+window.addEventListener("resize", resize);
+resize();
+
+// ─── GAME STATE ───────────────────────────────────────────────────────────────
+const MAX_SCORE = 5;
+const PAD = { w: 120, h: 12, margin: 30 };
+let gameRunning = false;
+let gameResult = ""; // "win" | "lose" | ""
+
+// Role: "host" = bottom paddle (player), "guest" = top paddle (ai slot)
+let role = null; // "host" | "guest"
+let dc = null;   // RTCDataChannel
+
+// Authoritative state lives on HOST, guest just sends input
+let state = {
+  ball: { x: 0, y: 0 },
+  host: { x: 0 },   // bottom
+  guest: { x: 0 },  // top
+  score: { host: 0, guest: 0 },
+  paused: true
+};
+
+// Local position (sent to host)
+let myX = 0;
+let pendingBallReset = false;
+let ballSpeed = 300;
+let ballVx = 0, ballVy = 0;
+
+function initState() {
+  state.ball.x = W / 2;
+  state.ball.y = H / 2;
+  state.host.x = W / 2;
+  state.guest.x = W / 2;
+  state.score = { host: 0, guest: 0 };
+  state.paused = true;
+  ballSpeed = 300;
+  myX = W / 2;
+  serveBall();
+}
+
+function serveBall() {
+  const angle = (Math.random() * Math.PI / 3) - Math.PI / 6;
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  ballVx = Math.sin(angle);
+  ballVy = Math.cos(angle) * dir;
+  state.ball.x = W / 2;
+  state.ball.y = H / 2;
+  state.paused = true;
+  setTimeout(() => { state.paused = false; }, 800);
+}
+
+// ─── HOST PHYSICS ─────────────────────────────────────────────────────────────
+function hostUpdate(dt) {
+  if (state.paused) return;
+
+  state.ball.x += ballVx * ballSpeed * dt;
+  state.ball.y += ballVy * ballSpeed * dt;
+
+  if (state.ball.x < 0 || state.ball.x > W) ballVx *= -1;
+
+  // Host paddle (bottom)
+  if (state.ball.y > H - PAD.margin - PAD.h) {
+    if (Math.abs(state.ball.x - state.host.x) < PAD.w / 2) {
+      hitPaddle(state.host.x, -1);
+    }
+  }
+
+  // Guest paddle (top)
+  if (state.ball.y < PAD.margin + PAD.h) {
+    if (Math.abs(state.ball.x - state.guest.x) < PAD.w / 2) {
+      hitPaddle(state.guest.x, 1);
+    }
+  }
+
+  // Scoring
+  if (state.ball.y < 0) { state.score.host++; checkWin(); serveBall(); }
+  if (state.ball.y > H)  { state.score.guest++; checkWin(); serveBall(); }
+}
+
+function hitPaddle(px, dir) {
+  const off = (state.ball.x - px) / (PAD.w / 2);
+  const angle = off * Math.PI / 3;
+  ballSpeed *= 1.05;
+  ballVx = Math.sin(angle);
+  ballVy = Math.cos(angle) * dir;
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+
+function checkWin() {
+  if (state.score.host >= MAX_SCORE || state.score.guest >= MAX_SCORE) {
+    state.paused = true;
+    gameResult = state.score.host >= MAX_SCORE ? "host" : "guest";
+    setTimeout(() => {
+      gameResult = "";
+      initState();
+    }, 2000);
+  }
+}
+
+// ─── DRAW ─────────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, W, H);
+  if (!gameRunning) return;
+
+  ctx.fillStyle = "#fff";
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2);
+  ctx.strokeStyle = "#fff"; ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Bottom paddle (host)
+  ctx.fillRect(state.host.x - PAD.w/2, H - PAD.margin - PAD.h, PAD.w, PAD.h);
+  // Top paddle (guest)
+  ctx.fillRect(state.guest.x - PAD.w/2, PAD.margin, PAD.w, PAD.h);
+
+  // Ball
+  ctx.beginPath();
+  ctx.arc(state.ball.x, state.ball.y, 8, 0, Math.PI*2);
+  ctx.fill();
+
+  // Scores — guest on top, host on bottom (from each player's perspective it's their score on bottom)
+  ctx.font = "20px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(state.score.guest, W/2, 40);
+  ctx.fillText(state.score.host, W/2, H - 20);
+
+  if (gameResult) {
+    const won = (role === "host" && gameResult === "host") || (role === "guest" && gameResult === "guest");
+    ctx.font = "bold 28px monospace";
+    ctx.fillText(won ? "YOU WIN!" : "YOU LOSE", W/2, H/2);
+  }
+}
+
+// ─── LOOP ─────────────────────────────────────────────────────────────────────
+let lastTime = 0;
+function loop(t) {
+  const dt = Math.min((t - lastTime) / 1000, 0.05);
+  lastTime = t;
+
+  if (gameRunning && role === "host") {
+    state.host.x = myX;
+    hostUpdate(dt);
+    if (dc && dc.readyState === "open") {
+      dc.send(JSON.stringify({ type: "state", state, ballVx, ballVy, ballSpeed }));
+    }
+  }
+
+  draw();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ─── INPUT ────────────────────────────────────────────────────────────────────
+canvas.addEventListener("touchstart", e => moveMe(e.touches[0].clientX));
+canvas.addEventListener("touchmove",  e => moveMe(e.touches[0].clientX));
+canvas.addEventListener("mousemove",  e => moveMe(e.clientX));
+
+function moveMe(x) {
+  if (!gameRunning) return;
+  myX = clamp(x, PAD.w/2, W - PAD.w/2);
+  if (role === "guest" && dc && dc.readyState === "open") {
+    dc.send(JSON.stringify({ type: "input", x: myX }));
+  }
+}
+
+// ─── WebRTC ───────────────────────────────────────────────────────────────────
+const RTC_CONFIG = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" }
+  ]
+};
+
+let pc = null;
+
+function createPC() {
+  pc = new RTCPeerConnection(RTC_CONFIG);
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+      setStatus("Connection lost.");
+    }
+  };
+  return pc;
+}
+
+// ── HOST FLOW ──────────────────────────────────────────────────────────────────
+async function startHost() {
+  role = "host";
+  showScreen("screen-host");
+  document.getElementById("screen-host").style.display = "flex";
+
+  pc = createPC();
+  dc = pc.createDataChannel("pong");
+  setupDC(dc);
+
+  // Collect all ICE candidates before making QR (trickle would be too big)
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // Wait for ICE gathering to complete
+  await new Promise(res => {
+    if (pc.iceGatheringState === "complete") return res();
+    pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") res(); };
+    setTimeout(res, 4000); // fallback
+  });
+
+  const payload = JSON.stringify({ sdp: pc.localDescription });
+  const compressed = btoa(payload);
+
+  document.getElementById("qr-wrap").style.display = "block";
+  // QRCode lib appends a canvas inside the target — clear first
+  const qc = document.getElementById("qr-canvas");
+  qc.innerHTML = "";
+  drawQR(qc, compressed);
+
+  setStatus("Waiting for connection…");
+}
+
+// ── GUEST FLOW ─────────────────────────────────────────────────────────────────
+async function startJoin() {
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js");
+  role = "guest";
+  showScreen("screen-join");
+  document.getElementById("scan-wrap").style.display = "flex";
+
+  const video = document.getElementById("scan-video");
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    video.srcObject = stream;
+  } catch(e) {
+    setStatus2("Camera error: " + e.message);
+    return;
+  }
+
+  setStatus2("Scanning…");
+  const tmpCanvas = document.createElement("canvas");
+  const tctx = tmpCanvas.getContext("2d");
+
+  async function scan() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      tmpCanvas.width = video.videoWidth;
+      tmpCanvas.height = video.videoHeight;
+      tctx.drawImage(video, 0, 0);
+      const img = tctx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+      const code = jsQR(img.data, img.width, img.height);
+      if (code) {
+        stream.getTracks().forEach(t => t.stop());
+        setStatus2("QR found! Connecting…");
+        await connectAsGuest(code.data);
+        return;
+      }
+    }
+    requestAnimationFrame(scan);
+  }
+  requestAnimationFrame(scan);
+}
+
+async function connectAsGuest(data) {
+  try {
+    const payload = JSON.parse(atob(data));
+    pc = createPC();
+
+    pc.ondatachannel = e => {
+      dc = e.channel;
+      setupDC(dc);
+    };
+
+    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    await new Promise(res => {
+      if (pc.iceGatheringState === "complete") return res();
+      pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === "complete") res(); };
+      setTimeout(res, 4000);
+    });
+
+    // We need to send our answer back to the host.
+    // Since there's no server, we use a second QR the guest shows and the host scans.
+    const answerPayload = btoa(JSON.stringify({ sdp: pc.localDescription }));
+    showAnswerQR(answerPayload);
+  } catch(e) {
+    setStatus2("Error: " + e.message);
+  }
+}
+
+function showAnswerQR(data) {
+  document.getElementById("scan-wrap").style.display = "none";
+  const wrap = document.getElementById("screen-join");
+  wrap.innerHTML = `
+    <p style="margin:0;font-size:14px;opacity:0.7;text-align:center;max-width:320px;">
+      Show this QR code to the HOST to complete connection
+    </p>
+    <div id="answer-qr" style="background:#fff;padding:12px;"></div>
+    <div id="status2" style="font-size:13px;opacity:0.8;text-align:center;">Waiting for host to scan…</div>
+  `;
+  const el = document.getElementById("answer-qr");
+  drawQR(el, data);
+}
+
+// ── HOST: Scan guest answer ────────────────────────────────────────────────────
+async function hostScanAnswer() {
+  await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js");
+
+  const hostScreen = document.getElementById("screen-host");
+  const scanDiv = document.createElement("div");
+  scanDiv.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:8px;";
+  scanDiv.innerHTML = `<p style="margin:0;font-size:14px;opacity:.7;text-align:center;">Scan the guest's QR code</p>
+    <video id="host-scan-video" autoplay playsinline muted style="width:220px;height:220px;object-fit:cover;border:2px solid #fff;"></video>`;
+  hostScreen.appendChild(scanDiv);
+
+  document.getElementById("qr-wrap").style.display = "none";
+
+  const video = document.getElementById("host-scan-video");
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    video.srcObject = stream;
+  } catch(e) {
+    setStatus("Camera error: " + e.message); return;
+  }
+
+  setStatus("Scanning guest code…");
+  const tmpCanvas = document.createElement("canvas");
+  const tctx = tmpCanvas.getContext("2d");
+
+  async function scan() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+      tmpCanvas.width = video.videoWidth;
+      tmpCanvas.height = video.videoHeight;
+      tctx.drawImage(video, 0, 0);
+      const img = tctx.getImageData(0, 0, tmpCanvas.width, tmpCanvas.height);
+      const code = jsQR(img.data, img.width, img.height);
+      if (code) {
+        stream.getTracks().forEach(t => t.stop());
+        setStatus("Connected! Starting…");
+        try {
+          const payload = JSON.parse(atob(code.data));
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        } catch(e) { setStatus("Error: " + e.message); }
+        return;
+      }
+    }
+    requestAnimationFrame(scan);
+  }
+  requestAnimationFrame(scan);
+}
+
+// ── DataChannel ────────────────────────────────────────────────────────────────
+function setupDC(channel) {
+  channel.onopen = () => {
+    hideUI();
+    initState();
+    myX = W / 2;
+    gameRunning = true;
+    if (role === "host") {
+      setTimeout(() => { document.getElementById("scan-guest-btn")?.remove(); }, 0);
+    }
+  };
+
+  channel.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "state" && role === "guest") {
+      // Mirror state — flip Y coordinates for guest perspective
+      const s = msg.state;
+      // Guest sees themselves at bottom: swap host/guest paddles and flip ball Y
+      state.guest.x = s.guest.x;
+      state.host.x  = s.host.x;
+      state.score   = { host: s.score.guest, guest: s.score.host }; // from guest POV
+      state.ball.x  = s.ball.x;
+      state.ball.y  = H - s.ball.y;
+      state.paused  = s.paused;
+      gameResult    = msg.state.paused && s.score.host >= MAX_SCORE ? "guest"
+                    : msg.state.paused && s.score.guest >= MAX_SCORE ? "host"
+                    : "";
+
+      // For guest draw: put "self" (guest) at bottom
+      const tmp = state.host;
+      state.host = state.guest;
+      state.guest = tmp;
+
+    } else if (msg.type === "input" && role === "host") {
+      state.guest.x = msg.x;
+    }
+  };
+}
+
+// ─── UI HELPERS ───────────────────────────────────────────────────────────────
+function showScreen(id) {
+  ["screen-home","screen-host","screen-join"].forEach(s => {
+    document.getElementById(s).style.display = "none";
+  });
+  document.getElementById(id).style.display = "flex";
+}
+function hideUI() {
+  document.getElementById("ui").style.display = "none";
+}
+function setStatus(t)  { const el = document.getElementById("status");  if(el) el.textContent = t; }
+function setStatus2(t) { const el = document.getElementById("status2"); if(el) el.textContent = t; }
+
+// ─── BUTTON WIRING ────────────────────────────────────────────────────────────
+document.getElementById("btn-host").onclick = async () => {
+  await startHost();
+  // Add "Scan Guest QR" button
+  const btn = document.createElement("button");
+  btn.id = "scan-guest-btn";
+  btn.textContent = "SCAN GUEST QR";
+  btn.style.marginTop = "8px";
+  btn.onclick = hostScanAnswer;
+  document.getElementById("screen-host").appendChild(btn);
+};
+document.getElementById("btn-join").onclick = startJoin;
+
+// ─── UTILS ────────────────────────────────────────────────────────────────────
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+</script>
+</body>
+</html>
