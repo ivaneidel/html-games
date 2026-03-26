@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sound Link FAST + Live Decode</title>
+<title>Sound Link PRO</title>
 
 <style>
 body {
@@ -17,7 +17,7 @@ body {
 
 #log, #bits {
   font-size:11px;
-  max-height:150px;
+  max-height:160px;
   overflow:auto;
   background:#111;
   padding:10px;
@@ -34,7 +34,7 @@ body {
   <div id="progress"></div>
 </div>
 
-<div id="bits"></div>
+<div id="bits">Idle</div>
 <div id="log"></div>
 
 <script>
@@ -42,7 +42,9 @@ body {
 const BASE = 800;
 const STEP = 120;
 const SYMBOL_BITS = 4;
-const SYMBOL_TIME = 40;
+const SYMBOL_TIME = 35; // slightly faster
+const THRESHOLD = 120;
+const CHANGE_THRESHOLD = 60; // Hz change to detect new symbol
 
 const PREAMBLE = "10101010101010101010101010101010";
 
@@ -79,7 +81,7 @@ async function startSender(){
   const msg = prompt("Message", "HELLO WORLD");
   if(!msg) return;
 
-  log("⏳ 3s...");
+  log("⏳ 3s delay...");
   await sleep(3000);
 
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -127,31 +129,70 @@ async function startReceiver(){
   let synced=false;
   let expectedLen=null;
 
+  let lastFreq = 0;
+  let lastValue = null;
+
+  log("🎧 Listening...");
+
   function loop(){
     analyser.getByteFrequencyData(data);
 
-    const freq = detectFreq(data, audioCtx.sampleRate);
-    const value = Math.round((freq - BASE) / STEP);
+    let maxVal = 0;
+    let index = 0;
 
-    if(value >=0 && value < 16){
+    for(let i=0;i<data.length;i++){
+      if(data[i] > maxVal){
+        maxVal = data[i];
+        index = i;
+      }
+    }
+
+    if(maxVal < THRESHOLD){
+      document.getElementById("bits").innerText = "No signal...";
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    const freq = index * audioCtx.sampleRate / (data.length * 2);
+
+    // ===== SMOOTHING =====
+    const smoothFreq = lastFreq * 0.7 + freq * 0.3;
+
+    const value = Math.round((smoothFreq - BASE) / STEP);
+
+    if(value < 0 || value > 15){
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    // ===== EDGE DETECTION =====
+    const freqDiff = Math.abs(smoothFreq - lastFreq);
+
+    if(freqDiff > CHANGE_THRESHOLD && value !== lastValue){
+
       const bits = value.toString(2).padStart(4,"0");
       buffer += bits;
+
+      lastValue = value;
+
+      // ===== SYNC =====
+      if(!synced && buffer.includes(PREAMBLE)){
+        log("📡 Sync locked");
+        buffer = buffer.split(PREAMBLE)[1];
+        synced=true;
+      }
+
+      // ===== LENGTH =====
+      if(synced && !expectedLen && buffer.length>=32){
+        expectedLen = parseInt(buffer.slice(0,32),2);
+        buffer = buffer.slice(32);
+        log("📏 Bits expected: " + expectedLen);
+      }
     }
 
-    // SYNC
-    if(!synced && buffer.includes(PREAMBLE)){
-      log("📡 Sync");
-      buffer = buffer.split(PREAMBLE)[1];
-      synced=true;
-    }
+    lastFreq = smoothFreq;
 
-    // LENGTH
-    if(synced && !expectedLen && buffer.length>=32){
-      expectedLen = parseInt(buffer.slice(0,32),2);
-      buffer = buffer.slice(32);
-      log("📏 Bits expected: "+expectedLen);
-    }
-
+    // ===== LIVE DECODE =====
     let decoded = "";
     let usableBits = buffer;
 
@@ -159,45 +200,31 @@ async function startReceiver(){
       usableBits = buffer.slice(0, expectedLen);
     }
 
-    // decode full bytes only
     const fullBytes = Math.floor(usableBits.length / 8) * 8;
     decoded = bitsToStr(usableBits.slice(0, fullBytes));
 
-    // FINAL MESSAGE
+    document.getElementById("bits").innerText =
+`Signal OK
+Freq: ${Math.floor(smoothFreq)} Hz
+Value: ${value}
+
+Decoded (live):
+${decoded}
+
+Bits:
+${buffer.slice(-200)}`;
+
+    // ===== DONE =====
     if(expectedLen && buffer.length >= expectedLen){
       log("📥 FINAL: " + decoded);
       stream.getTracks().forEach(t=>t.stop());
       return;
     }
 
-    document.getElementById("bits").innerText =
-`Freq: ${Math.floor(freq)} Hz
-Value: ${value}
-
-Decoded (live):
-${decoded}
-
-Raw bits:
-${buffer.slice(-200)}`;
-
     requestAnimationFrame(loop);
   }
 
   loop();
-}
-
-// ===== FREQ DETECTION =====
-function detectFreq(data, sampleRate){
-  let maxVal=0, index=0;
-
-  for(let i=0;i<data.length;i++){
-    if(data[i]>maxVal){
-      maxVal=data[i];
-      index=i;
-    }
-  }
-
-  return index * sampleRate / (data.length*2);
 }
 
 function sleep(ms){
