@@ -227,6 +227,7 @@ function serveBall(){
   const a=(Math.random()*Math.PI/3)-Math.PI/6, d=Math.random()>.5?1:-1;
   ballVx=Math.sin(a); ballVy=Math.cos(a)*d;
   state.ball.x=W/2; state.ball.y=H/2;
+  ballSpeed=300;
   state.paused=true; setTimeout(()=>{state.paused=false;},800);
 }
 function hostUpdate(dt){
