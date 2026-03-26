@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Pong P2P QR Debug</title>
+<title>Pong Visual Link</title>
 
 <style>
 body {
@@ -12,34 +12,27 @@ body {
   color:white;
   font-family:monospace;
   overflow:hidden;
-  touch-action:none;
+  text-align:center;
 }
-
 #ui { padding:15px; }
 canvas { display:none; }
 video { width:100%; display:none; }
 
-button {
-  width:100%;
-  padding:10px;
-  margin-top:5px;
-  background:white;
-  color:black;
-  border:none;
+#flash {
+  width:100vw;
+  height:50vh;
+  display:none;
 }
 
 #log {
   position:fixed;
   bottom:0;
-  left:0;
   width:100%;
   min-height:50px;
   max-height:200px;
   overflow:auto;
   background:#000;
   font-size:11px;
-  border-top:1px solid #333;
-  display:block; /* 👈 visible by default */
 }
 </style>
 </head>
@@ -48,84 +41,129 @@ button {
 <div id="ui">
   <button onclick="host()">Host</button>
   <button onclick="join()">Join</button>
-  <button onclick="toggleLog()">Toggle Debug</button>
-
-  <div id="qr"></div>
-  <video id="cam" autoplay></video>
 </div>
 
+<div id="flash"></div>
+<video id="cam" autoplay></video>
 <canvas id="game"></canvas>
 <div id="log"></div>
-
-<!-- LIBS -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
-onload="log('✅ QR lib loaded')"
-onerror="log('❌ QR lib failed')"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"
-onload="log('✅ jsQR loaded')"
-onerror="log('❌ jsQR failed')"></script>
 
 <script>
 // --- LOG ---
 const logEl = document.getElementById("log");
-
 function log(msg){
-  const t = new Date().toLocaleTimeString();
-  logEl.innerHTML += `[${t}] ${msg}<br>`;
+  logEl.innerHTML += msg + "<br>";
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-function toggleLog(){
-  logEl.style.display = logEl.style.display === "none" ? "block" : "none";
+// --- ENCODING ---
+function strToBits(str){
+  return str.split("").map(c =>
+    c.charCodeAt(0).toString(2).padStart(8,"0")
+  ).join("");
 }
 
-log("🚀 Script started");
+function bitsToStr(bits){
+  let out="";
+  for(let i=0;i<bits.length;i+=8){
+    out+=String.fromCharCode(parseInt(bits.slice(i,i+8),2));
+  }
+  return out;
+}
 
-// --- ERROR CAPTURE ---
-window.onerror = (m,s,l,c)=>log(`❌ JS Error: ${m} @${l}:${c}`);
-window.onunhandledrejection = e=>log(`❌ Promise: ${e.reason}`);
+// --- FLASH SEND ---
+async function flashData(data){
+  log("📤 Flashing data...");
+  const bits = strToBits(data);
+
+  const flash = document.getElementById("flash");
+  flash.style.display="block";
+
+  for(let i=0;i<bits.length;i++){
+    flash.style.background = bits[i]==="1" ? "white" : "black";
+    await sleep(30);
+  }
+
+  flash.style.display="none";
+  log("✅ Flash done");
+}
+
+function sleep(ms){
+  return new Promise(r=>setTimeout(r,ms));
+}
+
+// --- CAMERA RECEIVE ---
+async function receiveData(){
+  log("📥 Starting camera decode");
+
+  const video = document.getElementById("cam");
+  video.style.display="block";
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:"environment"}
+  });
+
+  video.srcObject = stream;
+
+  const canvas=document.createElement("canvas");
+  const ctx=canvas.getContext("2d");
+
+  let bits="";
+  let last=null;
+
+  return new Promise(resolve=>{
+    const loop = setInterval(()=>{
+      if(video.videoWidth===0) return;
+
+      canvas.width=video.videoWidth;
+      canvas.height=video.videoHeight;
+      ctx.drawImage(video,0,0);
+
+      const img = ctx.getImageData(0,0,canvas.width,canvas.height);
+      let sum=0;
+
+      for(let i=0;i<img.data.length;i+=40){
+        sum += img.data[i];
+      }
+
+      const bright = sum > (img.data.length*2);
+
+      if(last!==bright){
+        bits += bright ? "1" : "0";
+        last = bright;
+      }
+
+      // crude stop condition
+      if(bits.length > 20000){
+        clearInterval(loop);
+        video.srcObject.getTracks().forEach(t=>t.stop());
+        video.style.display="none";
+
+        log("📥 Bits received: "+bits.length);
+        resolve(bitsToStr(bits));
+      }
+
+    },30);
+  });
+}
 
 // --- WEBRTC ---
 let pc, dc, isHost=false;
 
 function setup(){
-  log("🟡 Creating PeerConnection");
-
   pc = new RTCPeerConnection({
     iceServers:[{urls:"stun:stun.l.google.com:19302"}]
   });
 
-  pc.onicecandidate = e=>{
-    if(e.candidate){
-      log("🧊 ICE candidate");
-    } else {
-      log("✅ ICE gathering COMPLETE");
-    }
-  };
-
-  pc.onicegatheringstatechange = ()=>{
-    log("📡 ICE gathering: " + pc.iceGatheringState);
-  };
-
-  pc.oniceconnectionstatechange = ()=>{
-    log("🧊 ICE state: " + pc.iceConnectionState);
-  };
-
-  pc.onconnectionstatechange = ()=>{
-    log("🔗 Connection: " + pc.connectionState);
-  };
-
   pc.ondatachannel = e=>{
-    log("📡 Data channel RECEIVED");
-    dc = e.channel;
+    dc=e.channel;
     setupDC();
   };
 }
 
 function setupDC(){
   dc.onopen = ()=>{
-    log("🟢 Data channel OPEN");
+    log("🟢 Connected!");
     startGame();
   };
 
@@ -136,121 +174,44 @@ function setupDC(){
 
 // --- HOST ---
 async function host(){
-  try {
-    log("🚀 HOST clicked");
-    isHost=true;
-    setup();
+  isHost=true;
+  setup();
 
-    log("📡 Creating data channel");
-    dc = pc.createDataChannel("g");
-    setupDC();
+  dc = pc.createDataChannel("g");
+  setupDC();
 
-    log("📝 Creating offer");
-    const offer = await pc.createOffer();
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
 
-    log("📌 Setting local description");
-    await pc.setLocalDescription(offer);
+  await sleep(1000);
 
-    log("📤 Waiting for ICE to finish...");
+  await flashData(JSON.stringify(pc.localDescription));
 
-    // show QR continuously
-    setInterval(()=>{
-      if(pc.localDescription){
-        showQR(JSON.stringify(pc.localDescription));
-      }
-    },500);
+  log("📡 Waiting for answer...");
+  const answerStr = await receiveData();
 
-  } catch(e){
-    log("❌ Host error: " + e);
-  }
+  const answer = JSON.parse(answerStr);
+  await pc.setRemoteDescription(answer);
 }
 
 // --- JOIN ---
 async function join(){
-  try {
-    log("🤝 JOIN clicked");
-    setup();
-    startCamera();
-  } catch(e){
-    log("❌ Join error: " + e);
-  }
+  setup();
+
+  const offerStr = await receiveData();
+  const offer = JSON.parse(offerStr);
+
+  await pc.setRemoteDescription(offer);
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  await sleep(1000);
+
+  await flashData(JSON.stringify(pc.localDescription));
 }
 
-// --- QR ---
-function showQR(data){
-  log("📦 Generating QR");
-  const el = document.getElementById("qr");
-  el.innerHTML="";
-  new QRCode(el, data);
-}
-
-// --- CAMERA ---
-async function startCamera(){
-  try {
-    log("📷 Starting camera");
-
-    const video=document.getElementById("cam");
-    video.style.display="block";
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:"environment"}
-    });
-
-    video.srcObject = stream;
-
-    const canvas=document.createElement("canvas");
-    const ctx=canvas.getContext("2d");
-
-    const scan = setInterval(()=>{
-      if(video.videoWidth === 0) return;
-
-      canvas.width=video.videoWidth;
-      canvas.height=video.videoHeight;
-
-      ctx.drawImage(video,0,0);
-
-      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code=jsQR(img.data,canvas.width,canvas.height);
-
-      if(code){
-        log("📥 QR scanned");
-        clearInterval(scan);
-
-        video.srcObject.getTracks().forEach(t=>t.stop());
-        video.style.display="none";
-
-        connect(code.data);
-      }
-    },300);
-
-  } catch(e){
-    log("❌ Camera error: " + e);
-  }
-}
-
-// --- CONNECT ---
-async function connect(data){
-  try {
-    log("🔗 Connecting...");
-
-    const offer=JSON.parse(data);
-
-    await pc.setRemoteDescription(offer);
-    log("📥 Remote description set");
-
-    const answer=await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    log("📤 Answer created");
-
-    showQR(JSON.stringify(pc.localDescription));
-
-  } catch(e){
-    log("❌ Connect error: " + e);
-  }
-}
-
-// --- GAME ---
+// --- GAME (same as before) ---
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
 
@@ -268,8 +229,6 @@ function resize(){
 addEventListener("resize",resize);
 
 function startGame(){
-  log("🎮 START GAME");
-
   document.getElementById("ui").style.display="none";
   canvas.style.display="block";
 
@@ -282,14 +241,12 @@ function startGame(){
   requestAnimationFrame(loop);
 }
 
-// --- INPUT ---
 canvas.addEventListener("touchmove",e=>{
   const x=e.touches[0].clientX;
   player.x=x;
   send({t:"p",x});
 });
 
-// --- NETWORK ---
 function send(d){
   if(dc?.readyState==="open"){
     dc.send(JSON.stringify(d));
@@ -301,7 +258,6 @@ function handle(d){
   if(d.t==="b") ball=d.ball;
 }
 
-// --- GAME ---
 function resetBall(){
   ball.x=W/2;
   ball.y=H/2;
@@ -334,7 +290,6 @@ function update(dt){
   send({t:"b",ball});
 }
 
-// --- DRAW ---
 function draw(){
   ctx.fillStyle="black";
   ctx.fillRect(0,0,W,H);
@@ -349,7 +304,6 @@ function draw(){
   ctx.fill();
 }
 
-// --- LOOP ---
 let last=0;
 function loop(t){
   const dt=(t-last)/1000;
