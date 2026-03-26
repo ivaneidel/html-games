@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Optical Link Debug</title>
+<title>Optical Link Robust</title>
 
 <style>
 body {
@@ -22,7 +22,7 @@ body {
   display:none;
 }
 
-video, canvas {
+canvas {
   width:100%;
 }
 
@@ -46,8 +46,8 @@ video, canvas {
 </div>
 
 <div id="flash"></div>
-<video id="cam" autoplay playsinline></video>
-<canvas id="overlay"></canvas>
+<video id="cam" autoplay playsinline style="display:none"></video>
+<canvas id="view"></canvas>
 
 <div id="bits"></div>
 <div id="log"></div>
@@ -85,149 +85,154 @@ function buildPayload(str){
   return PREAMBLE + len + data;
 }
 
-// ===== SENDER =====
+// ===== SENDER (RED / BLUE) =====
 async function startSender(){
-  const msg = prompt("Message to send", "HELLO WORLD");
+  const msg = prompt("Message", "HELLO");
   if(!msg) return;
+
+await new Promise((r) => setTimeout(() => r(), 3000));
 
   const bits = buildPayload(msg);
 
   const flash = document.getElementById("flash");
   const progress = document.getElementById("progress");
-  const bitsEl = document.getElementById("bits");
 
-  flash.style.display="block";
+  flash.style.display="grid";
+  flash.style.gridTemplateColumns = `repeat(${GRID},1fr)`;
 
   let i=0;
 
-  while(i < bits.length){
-    const chunk = bits.slice(i, i+FRAME_BITS).padEnd(FRAME_BITS,"0");
+  while(i<bits.length){
+    const chunk = bits.slice(i,i+FRAME_BITS).padEnd(FRAME_BITS,"0");
 
     flash.innerHTML="";
-    flash.style.display="grid";
-    flash.style.gridTemplateColumns = `repeat(${GRID},1fr)`;
-    flash.style.gridTemplateRows = `repeat(${GRID},1fr)`;
 
     for(let b of chunk){
       const div=document.createElement("div");
-      div.style.background = b==="1" ? "white" : "black";
+
+      // 🔥 ROBUST COLORS
+      div.style.background = b==="1"
+        ? "rgb(255,0,0)"   // RED
+        : "rgb(0,0,255)";  // BLUE
+
       flash.appendChild(div);
     }
 
-    i += FRAME_BITS;
+    i+=FRAME_BITS;
+    progress.innerText = `Sending ${Math.floor(i/bits.length*100)}%`;
 
-    progress.innerText = `Sending: ${Math.floor(i/bits.length*100)}%`;
-    bitsEl.innerText = "FRAME:\n"+chunk;
-
-    await sleep(16);
+    await sleep(20);
   }
 
   flash.style.display="none";
-  progress.innerText="Done";
-  log("📤 Send complete");
+  log("📤 Done");
 }
 
 // ===== RECEIVER =====
 async function startReceiver(){
-  try{
-    log("📷 Requesting camera");
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:"environment"}
+  });
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:"environment"}
-    });
+  const video = document.getElementById("cam");
+  video.srcObject = stream;
 
-    const video = document.getElementById("cam");
-    video.srcObject = stream;
+  const canvas = document.getElementById("view");
+  const ctx = canvas.getContext("2d");
 
-    const canvas = document.getElementById("overlay");
-    const ctx = canvas.getContext("2d");
+  const bitsEl = document.getElementById("bits");
+  const progress = document.getElementById("progress");
 
-    const bitsEl = document.getElementById("bits");
-    const progress = document.getElementById("progress");
+  let buffer="";
+  let synced=false;
+  let expectedLen=null;
 
-    let buffer="";
-    let synced=false;
-    let expectedLen=null;
-
-    function loop(){
-      if(video.videoWidth===0){
-        requestAnimationFrame(loop);
-        return;
-      }
-
-      canvas.width=video.videoWidth;
-      canvas.height=video.videoHeight;
-
-      ctx.drawImage(video,0,0);
-
-      const cellW = canvas.width/GRID;
-      const cellH = canvas.height/GRID;
-
-      let chunk="";
-
-      for(let y=0;y<GRID;y++){
-        for(let x=0;x<GRID;x++){
-
-          const cx = Math.floor((x+0.5)*cellW);
-          const cy = Math.floor((y+0.5)*cellH);
-
-          const px = ctx.getImageData(cx,cy,1,1).data;
-          const lum = (px[0]+px[1]+px[2])/3;
-
-          const bit = lum > 128 ? "1":"0";
-          chunk += bit;
-
-          ctx.strokeStyle="red";
-          ctx.strokeRect(x*cellW,y*cellH,cellW,cellH);
-
-          ctx.fillStyle="red";
-          ctx.fillText(bit,cx-4,cy+4);
-        }
-      }
-
-      buffer += chunk;
-
-      // --- SYNC ---
-      if(!synced && buffer.includes(PREAMBLE)){
-        log("📡 SYNC");
-        buffer = buffer.split(PREAMBLE)[1];
-        synced=true;
-      }
-
-      // --- LENGTH ---
-      if(synced && expectedLen===null && buffer.length>=32){
-        expectedLen = parseInt(buffer.slice(0,32),2);
-        buffer = buffer.slice(32);
-        log("📏 Expect bits: "+expectedLen);
-      }
-
-      // --- PROGRESS ---
-      if(expectedLen){
-        progress.innerText = `Receiving: ${Math.floor(buffer.length/expectedLen*100)}%`;
-
-        if(buffer.length >= expectedLen){
-          const dataBits = buffer.slice(0,expectedLen);
-          const msg = bitsToStr(dataBits);
-
-          log("📥 DONE: "+msg);
-
-          stream.getTracks().forEach(t=>t.stop());
-          return;
-        }
-      }
-
-      bitsEl.innerText =
-        "FRAME:\n"+chunk+
-        "\n\nBUFFER:\n"+buffer.slice(-200);
-
+  function loop(){
+    if(video.videoWidth===0){
       requestAnimationFrame(loop);
+      return;
     }
 
-    loop();
+    canvas.width=video.videoWidth;
+    canvas.height=video.videoHeight;
 
-  }catch(e){
-    log("❌ Camera error: "+e);
+    ctx.drawImage(video,0,0);
+
+    const cellW = canvas.width/GRID;
+    const cellH = canvas.height/GRID;
+
+    let chunk="";
+
+    for(let y=0;y<GRID;y++){
+      for(let x=0;x<GRID;x++){
+
+        const startX = x*cellW;
+        const startY = y*cellH;
+
+        // sample small area (noise reduction)
+        const img = ctx.getImageData(startX, startY, cellW/2, cellH/2);
+
+        let r=0,g=0,b=0,count=0;
+
+        for(let i=0;i<img.data.length;i+=4){
+          r+=img.data[i];
+          g+=img.data[i+1];
+          b+=img.data[i+2];
+          count++;
+        }
+
+        r/=count; g/=count; b/=count;
+
+        // 🔥 COLOR DECISION
+        const bit = r > b ? "1" : "0";
+        chunk += bit;
+
+        // overlay
+        ctx.strokeStyle="white";
+        ctx.strokeRect(startX,startY,cellW,cellH);
+
+        ctx.fillStyle="white";
+        ctx.fillText(bit, startX+10, startY+20);
+      }
+    }
+
+    buffer += chunk;
+
+    // SYNC
+    if(!synced && buffer.includes(PREAMBLE)){
+      log("📡 Sync");
+      buffer = buffer.split(PREAMBLE)[1];
+      synced=true;
+    }
+
+    // LENGTH
+    if(synced && expectedLen===null && buffer.length>=32){
+      expectedLen = parseInt(buffer.slice(0,32),2);
+      buffer = buffer.slice(32);
+      log("📏 Bits: "+expectedLen);
+    }
+
+    if(expectedLen){
+      progress.innerText =
+        `Receiving ${Math.floor(buffer.length/expectedLen*100)}%`;
+
+      if(buffer.length >= expectedLen){
+        const msg = bitsToStr(buffer.slice(0,expectedLen));
+        log("📥 "+msg);
+
+        stream.getTracks().forEach(t=>t.stop());
+        return;
+      }
+    }
+
+    bitsEl.innerText =
+      "FRAME:\n"+chunk+
+      "\n\nBUFFER:\n"+buffer.slice(-200);
+
+    requestAnimationFrame(loop);
   }
+
+  loop();
 }
 
 function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
