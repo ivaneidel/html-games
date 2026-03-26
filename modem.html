@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Optical Link Debug</title>
+
+<style>
+body {
+  margin:0;
+  background:black;
+  color:white;
+  font-family:monospace;
+  text-align:center;
+}
+
+#ui { padding:10px; }
+
+#flash {
+  width:100vw;
+  height:30vh;
+  display:none;
+}
+
+video, canvas {
+  width:100%;
+}
+
+#bits, #log {
+  font-size:10px;
+  max-height:120px;
+  overflow:auto;
+  background:#111;
+  padding:5px;
+  margin-top:5px;
+  white-space:pre-wrap;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <button onclick="startSender()">Sender</button>
+  <button onclick="startReceiver()">Receiver</button>
+  <div id="progress"></div>
+</div>
+
+<div id="flash"></div>
+<video id="cam" autoplay playsinline></video>
+<canvas id="overlay"></canvas>
+
+<div id="bits"></div>
+<div id="log"></div>
+
+<script>
+// ===== CONFIG =====
+const GRID = 6;
+const FRAME_BITS = GRID * GRID;
+const PREAMBLE = "10101010101010101010101010101010";
+
+// ===== LOG =====
+const logEl = document.getElementById("log");
+function log(m){
+  logEl.innerHTML += m+"<br>";
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ===== UTILS =====
+function strToBits(str){
+  return str.split("").map(c =>
+    c.charCodeAt(0).toString(2).padStart(8,"0")
+  ).join("");
+}
+function bitsToStr(bits){
+  let out="";
+  for(let i=0;i<bits.length;i+=8){
+    out+=String.fromCharCode(parseInt(bits.slice(i,i+8),2));
+  }
+  return out;
+}
+
+function buildPayload(str){
+  const data = strToBits(str);
+  const len = data.length.toString(2).padStart(32,"0");
+  return PREAMBLE + len + data;
+}
+
+// ===== SENDER =====
+async function startSender(){
+  const msg = prompt("Message to send", "HELLO WORLD");
+  if(!msg) return;
+
+  const bits = buildPayload(msg);
+
+  const flash = document.getElementById("flash");
+  const progress = document.getElementById("progress");
+  const bitsEl = document.getElementById("bits");
+
+  flash.style.display="block";
+
+  let i=0;
+
+  while(i < bits.length){
+    const chunk = bits.slice(i, i+FRAME_BITS).padEnd(FRAME_BITS,"0");
+
+    flash.innerHTML="";
+    flash.style.display="grid";
+    flash.style.gridTemplateColumns = `repeat(${GRID},1fr)`;
+    flash.style.gridTemplateRows = `repeat(${GRID},1fr)`;
+
+    for(let b of chunk){
+      const div=document.createElement("div");
+      div.style.background = b==="1" ? "white" : "black";
+      flash.appendChild(div);
+    }
+
+    i += FRAME_BITS;
+
+    progress.innerText = `Sending: ${Math.floor(i/bits.length*100)}%`;
+    bitsEl.innerText = "FRAME:\n"+chunk;
+
+    await sleep(16);
+  }
+
+  flash.style.display="none";
+  progress.innerText="Done";
+  log("📤 Send complete");
+}
+
+// ===== RECEIVER =====
+async function startReceiver(){
+  try{
+    log("📷 Requesting camera");
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"environment"}
+    });
+
+    const video = document.getElementById("cam");
+    video.srcObject = stream;
+
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+
+    const bitsEl = document.getElementById("bits");
+    const progress = document.getElementById("progress");
+
+    let buffer="";
+    let synced=false;
+    let expectedLen=null;
+
+    function loop(){
+      if(video.videoWidth===0){
+        requestAnimationFrame(loop);
+        return;
+      }
+
+      canvas.width=video.videoWidth;
+      canvas.height=video.videoHeight;
+
+      ctx.drawImage(video,0,0);
+
+      const cellW = canvas.width/GRID;
+      const cellH = canvas.height/GRID;
+
+      let chunk="";
+
+      for(let y=0;y<GRID;y++){
+        for(let x=0;x<GRID;x++){
+
+          const cx = Math.floor((x+0.5)*cellW);
+          const cy = Math.floor((y+0.5)*cellH);
+
+          const px = ctx.getImageData(cx,cy,1,1).data;
+          const lum = (px[0]+px[1]+px[2])/3;
+
+          const bit = lum > 128 ? "1":"0";
+          chunk += bit;
+
+          ctx.strokeStyle="red";
+          ctx.strokeRect(x*cellW,y*cellH,cellW,cellH);
+
+          ctx.fillStyle="red";
+          ctx.fillText(bit,cx-4,cy+4);
+        }
+      }
+
+      buffer += chunk;
+
+      // --- SYNC ---
+      if(!synced && buffer.includes(PREAMBLE)){
+        log("📡 SYNC");
+        buffer = buffer.split(PREAMBLE)[1];
+        synced=true;
+      }
+
+      // --- LENGTH ---
+      if(synced && expectedLen===null && buffer.length>=32){
+        expectedLen = parseInt(buffer.slice(0,32),2);
+        buffer = buffer.slice(32);
+        log("📏 Expect bits: "+expectedLen);
+      }
+
+      // --- PROGRESS ---
+      if(expectedLen){
+        progress.innerText = `Receiving: ${Math.floor(buffer.length/expectedLen*100)}%`;
+
+        if(buffer.length >= expectedLen){
+          const dataBits = buffer.slice(0,expectedLen);
+          const msg = bitsToStr(dataBits);
+
+          log("📥 DONE: "+msg);
+
+          stream.getTracks().forEach(t=>t.stop());
+          return;
+        }
+      }
+
+      bitsEl.innerText =
+        "FRAME:\n"+chunk+
+        "\n\nBUFFER:\n"+buffer.slice(-200);
+
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+
+  }catch(e){
+    log("❌ Camera error: "+e);
+  }
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+</script>
+
+</body>
+</html>
