@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Raycaster FPS - v3.1</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: black;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  canvas { display: block; }
+
+  .joystick {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.2);
+    opacity: 0.3;
+    transition: opacity 0.2s;
+  }
+
+  .stick {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.5);
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  #leftJoy { left: 30px; bottom: 30px; }
+  #rightJoy { right: 30px; bottom: 30px; }
+
+  #rotateWarning {
+    position: absolute;
+    inset: 0;
+    background: black;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<div id="leftJoy" class="joystick"><div class="stick"></div></div>
+<div id="rightJoy" class="joystick"><div class="stick"></div></div>
+<div id="rotateWarning">Rotate device</div>
+
+<script>
+// --- CANVAS ---
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+// --- ORIENTATION ---
+const rotateWarning = document.getElementById("rotateWarning");
+function checkOrientation() {
+  rotateWarning.style.display =
+    (window.innerWidth < window.innerHeight) ? "flex" : "none";
+}
+window.addEventListener("resize", checkOrientation);
+checkOrientation();
+
+// --- FULLSCREEN ---
+let fs = false;
+window.addEventListener("touchstart", () => {
+  if (!fs) {
+    document.documentElement.requestFullscreen?.();
+    fs = true;
+  }
+}, { passive: true });
+
+// --- JOYSTICK ---
+function createJoystick(el, isRight = false) {
+  const stick = el.querySelector(".stick");
+  let active = false, touchId = null;
+  let startX = 0, startY = 0;
+  let dx = 0, dy = 0;
+  const MAX = 40;
+
+  function applyClamp() {
+    let vx = dx, vy = dy;
+    const d = Math.hypot(vx, vy);
+    if (d > MAX) {
+      vx = vx / d * MAX;
+      vy = vy / d * MAX;
+    }
+    stick.style.transform =
+      `translate(calc(-50% + ${vx}px), calc(-50% + ${vy}px))`;
+  }
+
+  function reset() {
+    dx = dy = 0;
+    stick.style.transform = "translate(-50%, -50%)";
+    el.style.opacity = 0.3;
+    active = false;
+    touchId = null;
+  }
+
+  window.addEventListener("touchstart", (e) => {
+    for (let t of e.changedTouches) {
+      const r = el.getBoundingClientRect();
+      if (
+        t.clientX >= r.left && t.clientX <= r.right &&
+        t.clientY >= r.top && t.clientY <= r.bottom &&
+        !active
+      ) {
+        active = true;
+        touchId = t.identifier;
+        startX = t.clientX;
+        startY = t.clientY;
+        el.style.opacity = 1;
+      }
+    }
+  });
+
+  window.addEventListener("touchmove", (e) => {
+    for (let t of e.changedTouches) {
+      if (t.identifier === touchId) {
+        dx = t.clientX - startX;
+        dy = t.clientY - startY;
+        startX = isRight ? t.clientX : startX;
+        startY = isRight ? t.clientY : startY;
+        applyClamp();
+      }
+    }
+  });
+
+  window.addEventListener("touchend", (e) => {
+    for (let t of e.changedTouches) {
+      if (t.identifier === touchId) reset();
+    }
+  });
+
+  return {
+    get: () => isRight
+      ? { x: dx, y: dy }
+      : { x: dx / MAX, y: dy / MAX }
+  };
+}
+
+const leftJoy = createJoystick(document.getElementById("leftJoy"));
+const rightJoy = createJoystick(document.getElementById("rightJoy"), true);
+
+// --- MAP ---
+const TILE = 64;
+const SCALE = 0.5; // 👈 key fix
+
+const map = [
+  [1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,1],
+  [1,0,1,0,1,0,0,1],
+  [1,0,1,0,1,0,0,1],
+  [1,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1],
+];
+
+// --- PLAYER ---
+let player = {
+  x: 150,
+  y: 150,
+  angle: 0
+};
+
+const MOVE_SPEED = 2.5;
+const TURN_SPEED = 0.003;
+
+// --- COLLISION ---
+function isWall(x, y) {
+  const mx = Math.floor(x / TILE);
+  const my = Math.floor(y / TILE);
+  return map[my]?.[mx] === 1;
+}
+
+// --- RAYS ---
+const FOV = Math.PI / 3;
+const RAY_COUNT = 80;
+const MAX_DEPTH = 400;
+
+function castRays(offsetX, offsetY) {
+  let start = player.angle - FOV / 2;
+  const step = FOV / RAY_COUNT;
+
+  for (let i = 0; i < RAY_COUNT; i++) {
+    let angle = start + i * step;
+
+    for (let d = 0; d < MAX_DEPTH; d += 2) {
+      const rx = player.x + Math.cos(angle) * d;
+      const ry = player.y + Math.sin(angle) * d;
+
+      if (isWall(rx, ry)) {
+        ctx.strokeStyle = "yellow";
+        ctx.beginPath();
+        ctx.moveTo(offsetX + player.x * SCALE, offsetY + player.y * SCALE);
+        ctx.lineTo(offsetX + rx * SCALE, offsetY + ry * SCALE);
+        ctx.stroke();
+        break;
+      }
+    }
+  }
+}
+
+// --- LOOP ---
+function loop() {
+  ctx.fillStyle = "#111";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const l = leftJoy.get();
+  const r = rightJoy.get();
+
+  // rotation
+  player.angle += r.x * TURN_SPEED;
+
+  // movement
+  const forward = l.y;
+  const strafe = l.x;
+
+  const cos = Math.cos(player.angle);
+  const sin = Math.sin(player.angle);
+
+  let nx = player.x + (cos * forward - sin * strafe) * MOVE_SPEED;
+  let ny = player.y + (sin * forward + cos * strafe) * MOVE_SPEED;
+
+  if (!isWall(nx, player.y)) player.x = nx;
+  if (!isWall(player.x, ny)) player.y = ny;
+
+  // --- CENTER MAP ---
+  const mapWidth = map[0].length * TILE * SCALE;
+  const mapHeight = map.length * TILE * SCALE;
+
+  const offsetX = (canvas.width - mapWidth) / 2;
+  const offsetY = (canvas.height - mapHeight) / 2;
+
+  // draw map
+  for (let y = 0; y < map.length; y++) {
+    for (let x = 0; x < map[0].length; x++) {
+      if (map[y][x]) {
+        ctx.fillStyle = "#444";
+        ctx.fillRect(
+          offsetX + x*TILE*SCALE,
+          offsetY + y*TILE*SCALE,
+          TILE*SCALE,
+          TILE*SCALE
+        );
+      }
+    }
+  }
+
+  // rays
+  castRays(offsetX, offsetY);
+
+  // player
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(
+    offsetX + player.x * SCALE,
+    offsetY + player.y * SCALE,
+    4, 0, Math.PI*2
+  );
+  ctx.fill();
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
