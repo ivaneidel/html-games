@@ -11,9 +11,29 @@ html,body{
   font-family:'Segoe UI',monospace;color:white;overflow:hidden;
   user-select:none;-webkit-user-select:none;
 }
-#modal{
+
+/* ── SERVER MODAL ── */
+#serverModal{
   position:fixed;inset:0;background:#000c;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+  padding:20px;z-index:300;
+}
+#serverModal h2{font-size:20px;margin-bottom:4px;letter-spacing:2px;}
+#serverModal .hint{font-size:12px;color:#aaa;text-align:center;max-width:280px;}
+#serverModal input{
+  padding:10px 14px;font-size:14px;border-radius:8px;border:none;
+  background:#ffffffdd;color:#000;width:280px;text-align:center;
+}
+#serverModal button{
+  padding:12px 32px;font-size:16px;border-radius:8px;border:none;
+  background:#4caf50;color:white;cursor:pointer;font-weight:bold;
+}
+#serverError{color:#ff6b6b;font-size:12px;min-height:16px;}
+
+/* ── GAME MODAL ── */
+#modal{
+  position:fixed;inset:0;background:#000c;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;
   padding:20px;
 }
 #modal h2{font-size:22px;margin-bottom:8px;letter-spacing:2px;}
@@ -31,17 +51,15 @@ html,body{
 }
 #modal .hint{font-size:12px;color:#aaa;margin-top:6px;}
 
+/* ── GAME ── */
 #game{display:none;flex-direction:column;height:100vh;gap:0;}
 
-/* ID bar */
 #idBar{
   display:flex;justify-content:space-between;align-items:center;
   padding:4px 10px;background:#00000055;font-size:11px;color:#ffffffaa;
 }
-#idBar span{letter-spacing:1px;}
 #idBar .id-val{color:white;font-weight:bold;letter-spacing:2px;}
 
-/* Reconnect banner */
 #reconnectBanner{
   display:none;text-align:center;padding:6px;font-size:12px;font-weight:bold;
   background:#b7460088;letter-spacing:1px;
@@ -144,6 +162,14 @@ html,body{
 </head>
 <body>
 
+<div id="serverModal">
+  <h2>🌐 SERVER</h2>
+  <div class="hint">Enter your server URL — domain only, or full URL</div>
+  <input id="serverInput" placeholder="your-tunnel.trycloudflare.com" autocapitalize="none" autocorrect="off" spellcheck="false">
+  <div id="serverError"></div>
+  <button onclick="submitServer()">Connect</button>
+</div>
+
 <div id="modal">
   <h2>🎲 GENERALA</h2>
   <div class="hint">Your room code</div>
@@ -175,34 +201,74 @@ html,body{
   <h3>MENU</h3>
   <button class="menuItem" onclick="newGame()">🔄 New Game</button>
   <button class="menuItem" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+  <button class="menuItem" onclick="changeServer()">🌐 Change Server</button>
   <button id="menuClose" onclick="closeMenu()">cancel</button>
 </div>
 
 <script>
-const WS_URL = "wss://mode-acdbentity-odds-findarticles.trycloudflare.com";
-
-let ws = null;
-let myId = null, peer = null, isHost = false, state = null;
-let reconnectTimer = null;
-let connected = false;
-
-// ── LOCALSTORAGE ──
+// ── URL HELPERS ──
+function normalizeWsUrl(raw){
+  raw = raw.trim().replace(/^https?:\/\//i,'').replace(/^wss?:\/\//i,'').replace(/\/$/,'');
+  return 'wss://' + raw;
+}
+function savedUrl(){ return localStorage.getItem('generala_url'); }
+function saveUrl(url){ localStorage.setItem('generala_url', url); }
 function savedId(){ return sessionStorage.getItem('generala_id'); }
 function saveId(id){ sessionStorage.setItem('generala_id', id); }
 
-// ── WS SETUP ──
+// ── STATE ──
+let ws = null, myId = null, peer = null, isHost = false, state = null;
+let reconnectTimer = null, connected = false, WS_URL = null;
+
+function emptyScore(){
+  return {ones:null,twos:null,threes:null,fours:null,fives:null,sixes:null,
+    escalera:null,full:null,poker:null,generala:null,doble:null};
+}
+function initialState(firstTurn){
+  return {turn:firstTurn,roll:0,dice:[1,1,1,1,1],held:[false,false,false,false,false],scores:{}};
+}
+
+// ── SERVER MODAL ──
+function showServerModal(hint){
+  document.getElementById('serverModal').style.display = 'flex';
+  document.getElementById('serverError').textContent = hint || '';
+  const saved = savedUrl();
+  if(saved) document.getElementById('serverInput').value = saved.replace(/^wss:\/\//,'');
+}
+
+function submitServer(){
+  const raw = document.getElementById('serverInput').value;
+  if(!raw.trim()) return;
+  const url = normalizeWsUrl(raw);
+  document.getElementById('serverError').textContent = 'Connecting…';
+  tryConnect(url, ok => {
+    if(ok){
+      WS_URL = url;
+      saveUrl(url);
+      location.reload();
+    } else {
+      document.getElementById('serverError').textContent = '✗ Could not connect. Check the URL.';
+    }
+  });
+}
+
+function tryConnect(url, cb){
+  const probe = new WebSocket(url);
+  const t = setTimeout(() => { probe.close(); cb(false); }, 5000);
+  probe.onopen  = () => { clearTimeout(t); probe.close(); cb(true); };
+  probe.onerror = () => { clearTimeout(t); cb(false); };
+}
+
+// ── WS ──
 function connect(){
+  if(reconnectTimer){ clearTimeout(reconnectTimer); reconnectTimer = null; }
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
     connected = true;
     showReconnectBanner(false);
     const old = savedId();
-    if(old){
-      // Try to resume under old ID
-      ws.send(JSON.stringify({type:'rejoin', id:old}));
-    }
-    // If no saved ID, server will assign one on first message
+    if(old) ws.send(JSON.stringify({type:'rejoin', id:old}));
   };
 
   ws.onmessage = e => {
@@ -233,11 +299,8 @@ function connect(){
       isHost = myId < peer;
       document.getElementById('idBarOpp').innerText = peer;
       showReconnectBanner(false);
-      // Whoever still has state sends it — covers both "host reloaded" and "guest reloaded"
       if(state) send({type:'state', state});
-      if(!document.getElementById('game').style.display ||
-         document.getElementById('game').style.display === 'none') return;
-      render();
+      if(document.getElementById('game').style.display === 'flex') render();
     }
 
     if(msg.type === 'peer_disconnected'){
@@ -252,8 +315,7 @@ function connect(){
           peer = Object.keys(state.scores).find(id => id !== myId);
           document.getElementById('idBarOpp').innerText = peer;
         }
-        const gameVisible = document.getElementById('game').style.display === 'flex';
-        if(!gameVisible) startGame();
+        if(document.getElementById('game').style.display !== 'flex') startGame();
         else render();
       }
       if(data.type === 'action' && isHost) handle(data);
@@ -262,10 +324,7 @@ function connect(){
 
   ws.onclose = () => {
     connected = false;
-    if(document.getElementById('game').style.display === 'flex'){
-      showReconnectBanner(true);
-    }
-    // Retry every 3s
+    if(document.getElementById('game').style.display === 'flex') showReconnectBanner(true);
     reconnectTimer = setTimeout(connect, 3000);
   };
 
@@ -279,18 +338,8 @@ function showReconnectBanner(show, msg='⚡ Reconnecting…'){
 }
 
 function send(obj){
-  if(ws && ws.readyState === WebSocket.OPEN){
+  if(ws && ws.readyState === WebSocket.OPEN)
     ws.send(JSON.stringify({type:'message', text:JSON.stringify(obj)}));
-  }
-}
-
-// ── STATE ──
-function emptyScore(){
-  return {ones:null,twos:null,threes:null,fours:null,fives:null,sixes:null,
-    escalera:null,full:null,poker:null,generala:null,doble:null};
-}
-function initialState(firstTurn){
-  return {turn:firstTurn,roll:0,dice:[1,1,1,1,1],held:[false,false,false,false,false],scores:{}};
 }
 
 // ── ACTIONS ──
@@ -307,15 +356,11 @@ function roll(){
 }
 function toggle(i){
   if(!isMyTurn() || state.roll === 0) return;
-  if(!isHost){
-    state.held[i] = !state.held[i];
-    render();
-  }
+  if(!isHost){ state.held[i] = !state.held[i]; render(); }
   dispatch({action:'toggle', i});
 }
 function choose(cat){
-  if(!isMyTurn()) return;
-  if(state.scores[myId][cat] !== null) return;
+  if(!isMyTurn() || state.scores[myId][cat] !== null) return;
   dispatch({action:'score', cat});
 }
 
@@ -323,7 +368,7 @@ function choose(cat){
 function handle(a){
   if(a.action === 'roll'){
     if(state.roll >= 3) return;
-    for(let i=0;i<5;i++) if(!state.held[i]) state.dice[i] = 1 + (Math.random()*6|0);
+    for(let i=0;i<5;i++) if(!state.held[i]) state.dice[i] = 1+(Math.random()*6|0);
     state.roll++;
     sendState(true);
   }
@@ -381,7 +426,7 @@ function canScore(cat,st){
   if(cat==='fives')   return diceSum(d,5)>0;
   if(cat==='sixes')   return diceSum(d,6)>0;
   if(cat==='escalera') return isStraight(d);
-  if(cat==='full'){const set=new Set(d); return set.size===2&&[...set].some(x=>diceCount(d,x)===3);}
+  if(cat==='full'){ const set=new Set(d); return set.size===2&&[...set].some(x=>diceCount(d,x)===3); }
   if(cat==='poker')    return d.some(v=>diceCount(d,v)>=4);
   if(cat==='generala') return new Set(d).size===1;
   if(cat==='doble')    return new Set(d).size===1&&st.scores[st.turn]?.generala!==null;
@@ -395,7 +440,7 @@ function gameOver(){
 }
 function total(id){ return Object.values(state.scores[id]).reduce((a,b)=>a+(b||0),0); }
 function endGame(){
-  state.over = { scores: { [myId]: total(myId), [peer]: total(peer) } };
+  state.over = { scores:{ [myId]:total(myId), [peer]:total(peer) } };
   sendState();
 }
 
@@ -436,22 +481,22 @@ function buildDie(val,held,anim){
 function render(anim=false){
   if(!state||!peer) return;
 
-  // Winner banner
+  // Winner
   const winnerEl = document.getElementById('winner');
   if(state.over){
-    const t1 = state.over.scores[myId] ?? 0;
-    const t2 = state.over.scores[peer]  ?? 0;
-    const msg = t1>t2?'🏆 YOU WIN!':t1<t2?'😔 YOU LOSE':'🤝 DRAW';
+    const t1=state.over.scores[myId]??0, t2=state.over.scores[peer]??0;
+    const msg=t1>t2?'🏆 YOU WIN!':t1<t2?'😔 YOU LOSE':'🤝 DRAW';
     winnerEl.innerHTML=`<div>${msg}</div><div style="font-size:20px">${t1} – ${t2}</div>`;
     winnerEl.style.display='flex';
     return;
   }
   winnerEl.style.display='none';
+
   const myTurn=isMyTurn(), rolled=state.roll>0;
+  const turnsLeft=Object.values(state.scores[state.turn]).filter(v=>v===null).length;
 
   const banner=document.getElementById('turnBanner');
-  const turnsLeft = Object.values(state.scores[state.turn]).filter(v=>v===null).length;
-  banner.textContent = (myTurn?'⬤ YOUR TURN':'⬤ OPPONENT\'S TURN') + `  ·  ${turnsLeft} left`;
+  banner.textContent=(myTurn?'⬤ YOUR TURN':'⬤ OPPONENT\'S TURN')+`  ·  ${turnsLeft} left`;
   banner.className=myTurn?'mine':'theirs';
 
   const diceArea=document.getElementById('diceArea');
@@ -463,10 +508,9 @@ function render(anim=false){
   });
 
   const rollBtn=document.getElementById('rollBtn');
-  const rollInfo=document.getElementById('rollInfo');
   rollBtn.disabled=!myTurn||state.roll>=3;
   rollBtn.textContent=`🎲 Roll (${state.roll}/3)`;
-  rollInfo.textContent=rolled
+  document.getElementById('rollInfo').textContent=rolled
     ?(myTurn?'Tap dice to hold/unhold':'Waiting for opponent…')
     :(myTurn?'Roll the dice to start your turn':'Waiting for opponent…');
 
@@ -478,7 +522,6 @@ function render(anim=false){
     const h=document.createElement('h3');
     h.textContent=(pid===myId?'You':'Opponent')+' · '+total(pid)+' pts';
     col.appendChild(h);
-
     Object.keys(emptyScore()).forEach(cat=>{
       const row=document.createElement('div');
       row.className='score-row';
@@ -488,7 +531,6 @@ function render(anim=false){
       lbl.textContent=CAT_LABELS[cat];
       const valEl=document.createElement('span');
       valEl.className='val';
-
       if(stored!==null){
         valEl.textContent=stored;
         row.classList.add('locked');
@@ -508,10 +550,7 @@ function render(anim=false){
           valEl.textContent='–';
           row.classList.add('invalid');
         }
-      } else {
-        valEl.textContent='';
       }
-
       row.appendChild(lbl);
       row.appendChild(valEl);
       col.appendChild(row);
@@ -536,20 +575,39 @@ function connectPeer(){
 // ── MENU ──
 function openMenu(){ document.getElementById('menuModal').style.display='flex'; }
 function closeMenu(){ document.getElementById('menuModal').style.display='none'; }
-
-function newGame(){
-  sessionStorage.clear();
-  location.reload();
-}
-
+function newGame(){ sessionStorage.clear(); location.reload(); }
 function toggleFullscreen(){
   if(!document.fullscreenElement) document.documentElement.requestFullscreen();
   else document.exitFullscreen();
   closeMenu();
 }
+function changeServer(){
+  localStorage.removeItem('generala_url');
+  sessionStorage.clear();
+  closeMenu();
+  location.reload();
+}
 
 // ── INIT ──
-connect();
+document.getElementById('serverInput').addEventListener('keydown', e=>{
+  if(e.key==='Enter') submitServer();
+});
+
+const savedWsUrl = savedUrl();
+if(savedWsUrl){
+  WS_URL = savedWsUrl;
+  tryConnect(savedWsUrl, ok => {
+    if(ok){
+      document.getElementById('serverModal').style.display = 'none';
+      document.getElementById('modal').style.display = 'flex';
+      connect();
+    } else {
+      showServerModal('✗ Saved server unreachable. Enter a new URL.');
+    }
+  });
+} else {
+  showServerModal();
+}
 </script>
 </body>
 </html>
