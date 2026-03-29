@@ -115,6 +115,31 @@ html,body{
   display:none;align-items:center;justify-content:center;
   flex-direction:column;gap:12px;font-size:28px;text-align:center;
 }
+
+/* ── MENU ── */
+#menuBtn{
+  position:fixed;bottom:18px;right:18px;
+  width:44px;height:44px;border-radius:50%;border:none;
+  background:#ffffff55;color:white;font-size:22px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(4px);z-index:100;
+}
+#menuModal{
+  position:fixed;inset:0;background:#000e;
+  display:none;align-items:center;justify-content:center;
+  flex-direction:column;gap:14px;z-index:200;
+}
+#menuModal h3{font-size:16px;letter-spacing:2px;opacity:0.6;margin-bottom:4px;}
+.menuItem{
+  width:220px;padding:14px;border-radius:12px;border:none;cursor:pointer;
+  font-size:16px;font-weight:bold;letter-spacing:1px;
+  background:#ffffff33;color:white;
+}
+.menuItem:active{background:#ffffff44;}
+#menuClose{
+  margin-top:8px;background:transparent;border:none;
+  color:#ffffff88;font-size:13px;cursor:pointer;letter-spacing:1px;
+}
 </style>
 </head>
 <body>
@@ -144,6 +169,14 @@ html,body{
 </div>
 
 <div id="winner"></div>
+
+<button id="menuBtn" onclick="openMenu()">⋯</button>
+<div id="menuModal">
+  <h3>MENU</h3>
+  <button class="menuItem" onclick="newGame()">🔄 New Game</button>
+  <button class="menuItem" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+  <button id="menuClose" onclick="closeMenu()">cancel</button>
+</div>
 
 <script>
 const WS_URL = "wss://mode-acdbentity-odds-findarticles.trycloudflare.com";
@@ -362,11 +395,7 @@ function gameOver(){
 }
 function total(id){ return Object.values(state.scores[id]).reduce((a,b)=>a+(b||0),0); }
 function endGame(){
-  const t1=total(myId),t2=total(peer);
-  const win=t1>t2?'🏆 YOU WIN!':t1<t2?'😔 YOU LOSE':'🤝 DRAW';
-  document.getElementById('winner').innerHTML=
-    `<div>${win}</div><div style="font-size:20px">${t1} – ${t2}</div>`;
-  document.getElementById('winner').style.display='flex';
+  state.over = { scores: { [myId]: total(myId), [peer]: total(peer) } };
   sendState();
 }
 
@@ -406,10 +435,23 @@ function buildDie(val,held,anim){
 
 function render(anim=false){
   if(!state||!peer) return;
+
+  // Winner banner
+  const winnerEl = document.getElementById('winner');
+  if(state.over){
+    const t1 = state.over.scores[myId] ?? 0;
+    const t2 = state.over.scores[peer]  ?? 0;
+    const msg = t1>t2?'🏆 YOU WIN!':t1<t2?'😔 YOU LOSE':'🤝 DRAW';
+    winnerEl.innerHTML=`<div>${msg}</div><div style="font-size:20px">${t1} – ${t2}</div>`;
+    winnerEl.style.display='flex';
+    return;
+  }
+  winnerEl.style.display='none';
   const myTurn=isMyTurn(), rolled=state.roll>0;
 
   const banner=document.getElementById('turnBanner');
-  banner.textContent=myTurn?'⬤ YOUR TURN':'⬤ OPPONENT\'S TURN';
+  const turnsLeft = Object.values(state.scores[state.turn]).filter(v=>v===null).length;
+  banner.textContent = (myTurn?'⬤ YOUR TURN':'⬤ OPPONENT\'S TURN') + `  ·  ${turnsLeft} left`;
   banner.className=myTurn?'mine':'theirs';
 
   const diceArea=document.getElementById('diceArea');
@@ -489,6 +531,21 @@ function startGame(){
 
 function connectPeer(){
   ws.send(JSON.stringify({type:'connect', target:document.getElementById('peerId').value}));
+}
+
+// ── MENU ──
+function openMenu(){ document.getElementById('menuModal').style.display='flex'; }
+function closeMenu(){ document.getElementById('menuModal').style.display='none'; }
+
+function newGame(){
+  sessionStorage.clear();
+  location.reload();
+}
+
+function toggleFullscreen(){
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen();
+  else document.exitFullscreen();
+  closeMenu();
 }
 
 // ── INIT ──
