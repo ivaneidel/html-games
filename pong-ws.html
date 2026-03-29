@@ -17,7 +17,7 @@ html, body {
 canvas { display: block; }
 
 #log {
-  display:none; /* hidden by default */
+  display:none;
   position:fixed;
   bottom:0;
   width:100%;
@@ -78,7 +78,6 @@ let myId = null;
 let peer = null;
 let isHost = false;
 
-// wrap send
 function sendMessage(obj){
   if(ws.readyState === 1){
     ws.send(JSON.stringify({
@@ -90,39 +89,29 @@ function sendMessage(obj){
 
 ws.onmessage = (e)=>{
   const msg = JSON.parse(e.data);
-  log("WS:", msg);
 
-  // ===== ID =====
   if(msg.type === "id"){
     myId = msg.id;
     document.getElementById("myId").innerText = myId;
   }
 
-  // ===== CONNECTED =====
   if(msg.type === "connected"){
     peer = msg.with;
-
-    // first connector becomes host
-    isHost = true;
-
+    isHost = true; // connector is host
     startGame();
   }
 
-  // ===== GAME MESSAGES =====
   if(msg.type === "message"){
     let data;
-    try {
-      data = JSON.parse(msg.text);
-    } catch {
-      return;
-    }
+    try { data = JSON.parse(msg.text); } catch { return; }
 
     if(data.type === "paddle"){
       ai.x = data.x;
     }
 
     if(data.type === "ball" && !isHost){
-      ball = data.ball;
+      remoteBall = data.ball;
+      lastBallTime = performance.now();
     }
   }
 
@@ -162,6 +151,11 @@ let ai={x:W/2};
 
 let ball={x:W/2,y:H/2,vx:0,vy:0,speed:300};
 
+// 🔥 NEW (smoothing)
+let remoteBall = { x:W/2, y:H/2, vx:0, vy:0 };
+let renderBall = { x:W/2, y:H/2 };
+let lastBallTime = 0;
+
 // INPUT
 canvas.addEventListener("touchstart", e=>{
   movePlayer(e.touches[0].clientX);
@@ -194,6 +188,10 @@ function resetBall(){
   ball.vx=Math.sin(angle);
   ball.vy=Math.cos(angle)*dir;
 
+  renderBall.x = ball.x;
+  renderBall.y = ball.y;
+  remoteBall = {...ball};
+
   setTimeout(()=>paused=false,800);
 }
 
@@ -207,6 +205,7 @@ function update(dt){
   });
 
   if(isHost){
+    // HOST = REAL SIMULATION
     ball.x+=ball.vx*ball.speed*dt;
     ball.y+=ball.vy*ball.speed*dt;
 
@@ -232,6 +231,19 @@ function update(dt){
       type:"ball",
       ball
     });
+
+  } else {
+    // 🔥 CLIENT = SMOOTH + PREDICT
+    const now = performance.now();
+    const lag = (now - lastBallTime) / 1000;
+
+    // predict forward
+    const predictedX = remoteBall.x + remoteBall.vx * remoteBall.speed * lag;
+    const predictedY = remoteBall.y + remoteBall.vy * remoteBall.speed * lag;
+
+    // interpolate
+    renderBall.x += (predictedX - renderBall.x) * 0.2;
+    renderBall.y += (predictedY - renderBall.y) * 0.2;
   }
 }
 
@@ -263,8 +275,10 @@ function draw(){
   ctx.fillRect(player.x-paddle.width/2,H-paddle.margin-paddle.height,paddle.width,paddle.height);
   ctx.fillRect(ai.x-paddle.width/2,paddle.margin,paddle.width,paddle.height);
 
+  const b = isHost ? ball : renderBall;
+
   ctx.beginPath();
-  ctx.arc(ball.x,ball.y,8,0,Math.PI*2);
+  ctx.arc(b.x,b.y,8,0,Math.PI*2);
   ctx.fill();
 
   if(!started){
