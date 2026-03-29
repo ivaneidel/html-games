@@ -179,6 +179,7 @@ class WSSNet {
 
   // ── PUBLIC: MOUNT MENU ────────────────────────────────────
   mountMenu(container = document.body) {
+    if (document.getElementById('wssnet-menu-root')) return; // already mounted
     const el = document.createElement('div');
     el.id = 'wssnet-menu-root';
     el.innerHTML = `
@@ -222,7 +223,9 @@ class WSSNet {
 
   // ── PUBLIC: MOUNT PAIR MODAL ───────────────────────────────
   mountPairModal(container = document.body) {
+    if (document.getElementById('wssnet-pair-modal')) return; // already mounted
     const el = document.createElement('div');
+    el.id = 'wssnet-pair-modal';
     el.className = 'wssnet-overlay';
     el.innerHTML = `
       <div class="wssnet-card">
