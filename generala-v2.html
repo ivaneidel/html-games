@@ -153,7 +153,7 @@ ws.onmessage=e=>{
     peer=msg.with;
     // Only the client with the lower ID becomes host.
     // Both clients receive "connected", so we need exactly one to init state.
-    if(myId <= peer){
+    if(myId < peer){
       isHost=true;
       state=initialState(peer); // higher-ID (guest) goes first
       state.scores[myId]=emptyScore();
@@ -184,18 +184,29 @@ ws.onmessage=e=>{
 
 // ── ACTIONS ──
 function isMyTurn(){return state&&state.turn===myId;}
+
+function dispatch(obj){
+  if(isHost) handle(obj);
+  else send({type:"action",...obj});
+}
+
 function roll(){
   if(!isMyTurn()||state.roll>=3)return;
-  send({type:"action",action:"roll"});
+  dispatch({action:"roll"});
 }
 function toggle(i){
   if(!isMyTurn()||state.roll===0)return;
-  send({type:"action",action:"toggle",i});
+  if(!isHost){
+    // Optimistic update: flip locally so there's no visible lag
+    state.held[i]=!state.held[i];
+    render();
+  }
+  dispatch({action:"toggle",i});
 }
 function choose(cat){
   if(!isMyTurn())return;
   if(state.scores[myId][cat]!==null)return;
-  send({type:"action",action:"score",cat});
+  dispatch({action:"score",cat});
 }
 
 // ── HOST LOGIC ──
@@ -370,9 +381,15 @@ function render(anim=false){
       } else if(pid===myId&&myTurn&&rolled){
         const preview=computeScore(cat,state);
         const valid=canScore(cat,state);
+        const mustBurn=state.roll===3;
         if(valid){
           valEl.textContent="+"+preview;
           row.classList.add("clickable","preview-val");
+          row.onclick=()=>choose(cat);
+        } else if(mustBurn){
+          valEl.textContent="burn 0";
+          row.classList.add("clickable");
+          row.style.opacity="0.5";
           row.onclick=()=>choose(cat);
         } else {
           valEl.textContent="–";
