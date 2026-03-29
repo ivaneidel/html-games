@@ -97,7 +97,7 @@ ws.onmessage = (e)=>{
 
   if(msg.type === "connected"){
     peer = msg.with;
-    isHost = true; // connector is host
+    isHost = true;
     startGame();
   }
 
@@ -121,7 +121,7 @@ ws.onmessage = (e)=>{
   }
 };
 
-// ===== CONNECT =====
+// CONNECT
 function connectPeer(){
   const id = document.getElementById("peerId").value;
   ws.send(JSON.stringify({
@@ -146,17 +146,33 @@ let started=false, paused=false;
 
 const paddle={width:120,height:12,margin:30};
 
-let player={x:W/2};
-let ai={x:W/2};
+// NORMALIZED STATE (0 → 1)
+let player={x:0.5};
+let ai={x:0.5};
 
-let ball={x:W/2,y:H/2,vx:0,vy:0,speed:300};
+let ball={
+  x:0.5,
+  y:0.5,
+  vx:0,
+  vy:0,
+  speed:0.6
+};
 
-// 🔥 NEW (smoothing)
-let remoteBall = { x:W/2, y:H/2, vx:0, vy:0 };
-let renderBall = { x:W/2, y:H/2 };
-let lastBallTime = 0;
+// smoothing
+let remoteBall={...ball};
+let renderBall={...ball};
+let lastBallTime=0;
 
-// INPUT
+// ===== HELPERS =====
+function toPxX(x){ return x * W; }
+function toPxY(y){ return y * H; }
+function toNormX(x){ return x / W; }
+
+function clamp(v,min,max){
+  return Math.max(min,Math.min(max,v));
+}
+
+// ===== INPUT =====
 canvas.addEventListener("touchstart", e=>{
   movePlayer(e.touches[0].clientX);
 });
@@ -164,11 +180,12 @@ canvas.addEventListener("touchmove", e=>{
   movePlayer(e.touches[0].clientX);
 });
 
-function movePlayer(x){
-  player.x = clamp(x, paddle.width/2, W-paddle.width/2);
+function movePlayer(px){
+  const nx = toNormX(px);
+  player.x = clamp(nx, 0.1, 0.9);
 }
 
-// START
+// ===== START =====
 function startGame(){
   document.getElementById("modal").style.display="none";
   started=true;
@@ -178,9 +195,9 @@ function startGame(){
 function resetBall(){
   paused=true;
 
-  ball.x=W/2;
-  ball.y=H/2;
-  ball.speed=300;
+  ball.x=0.5;
+  ball.y=0.5;
+  ball.speed=0.6;
 
   const angle=(Math.random()*Math.PI/3)-Math.PI/6;
   const dir=Math.random()>0.5?1:-1;
@@ -188,14 +205,13 @@ function resetBall(){
   ball.vx=Math.sin(angle);
   ball.vy=Math.cos(angle)*dir;
 
-  renderBall.x = ball.x;
-  renderBall.y = ball.y;
-  remoteBall = {...ball};
+  renderBall={...ball};
+  remoteBall={...ball};
 
   setTimeout(()=>paused=false,800);
 }
 
-// UPDATE
+// ===== UPDATE =====
 function update(dt){
   if(!started || paused) return;
 
@@ -205,25 +221,27 @@ function update(dt){
   });
 
   if(isHost){
-    // HOST = REAL SIMULATION
-    ball.x+=ball.vx*ball.speed*dt;
-    ball.y+=ball.vy*ball.speed*dt;
+    // REAL PHYSICS
+    ball.x += ball.vx * ball.speed * dt;
+    ball.y += ball.vy * ball.speed * dt;
 
-    if(ball.x<0||ball.x>W) ball.vx*=-1;
+    if(ball.x < 0 || ball.x > 1) ball.vx *= -1;
 
-    if(ball.y>H-paddle.margin-paddle.height){
-      if(Math.abs(ball.x-player.x)<paddle.width/2){
-        hit(player.x,-1);
+    const paddleWidth = paddle.width / W;
+
+    if(ball.y > 1 - (paddle.margin / H)){
+      if(Math.abs(ball.x - player.x) < paddleWidth/2){
+        hit(player.x, -1);
       }
     }
 
-    if(ball.y<paddle.margin+paddle.height){
-      if(Math.abs(ball.x-ai.x)<paddle.width/2){
-        hit(ai.x,1);
+    if(ball.y < (paddle.margin / H)){
+      if(Math.abs(ball.x - ai.x) < paddleWidth/2){
+        hit(ai.x, 1);
       }
     }
 
-    if(ball.y<0||ball.y>H){
+    if(ball.y < 0 || ball.y > 1){
       resetBall();
     }
 
@@ -233,32 +251,33 @@ function update(dt){
     });
 
   } else {
-    // 🔥 CLIENT = SMOOTH + PREDICT
+    // SMOOTH + PREDICT
     const now = performance.now();
     const lag = (now - lastBallTime) / 1000;
 
-    // predict forward
-    const predictedX = remoteBall.x + remoteBall.vx * remoteBall.speed * lag;
-    const predictedY = remoteBall.y + remoteBall.vy * remoteBall.speed * lag;
+    const px = remoteBall.x + remoteBall.vx * remoteBall.speed * lag;
+    const py = remoteBall.y + remoteBall.vy * remoteBall.speed * lag;
 
-    // interpolate
-    renderBall.x += (predictedX - renderBall.x) * 0.2;
-    renderBall.y += (predictedY - renderBall.y) * 0.2;
+    renderBall.x += (px - renderBall.x) * 0.2;
+    renderBall.y += (py - renderBall.y) * 0.2;
   }
 }
 
+// ===== HIT =====
 function hit(px,dir){
-  const offset=(ball.x-px)/(paddle.width/2);
-  const angle=offset*Math.PI/3;
+  const paddleWidth = paddle.width / W;
+  const offset = (ball.x - px) / (paddleWidth/2);
 
-  ball.speed*=1.05;
-  ball.vx=Math.sin(angle);
-  ball.vy=Math.cos(angle)*dir;
+  const angle = offset * Math.PI/3;
+
+  ball.speed *= 1.05;
+  ball.vx = Math.sin(angle);
+  ball.vy = Math.cos(angle) * dir;
 
   if(navigator.vibrate) navigator.vibrate(10);
 }
 
-// DRAW
+// ===== DRAW =====
 function draw(){
   ctx.fillStyle="black";
   ctx.fillRect(0,0,W,H);
@@ -272,13 +291,32 @@ function draw(){
   ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.fillRect(player.x-paddle.width/2,H-paddle.margin-paddle.height,paddle.width,paddle.height);
-  ctx.fillRect(ai.x-paddle.width/2,paddle.margin,paddle.width,paddle.height);
+  // paddles
+  ctx.fillRect(
+    toPxX(player.x) - paddle.width/2,
+    H - paddle.margin - paddle.height,
+    paddle.width,
+    paddle.height
+  );
 
+  ctx.fillRect(
+    toPxX(ai.x) - paddle.width/2,
+    paddle.margin,
+    paddle.width,
+    paddle.height
+  );
+
+  // ball
   const b = isHost ? ball : renderBall;
 
   ctx.beginPath();
-  ctx.arc(b.x,b.y,8,0,Math.PI*2);
+  ctx.arc(
+    toPxX(b.x),
+    toPxY(b.y),
+    8,
+    0,
+    Math.PI*2
+  );
   ctx.fill();
 
   if(!started){
@@ -288,7 +326,7 @@ function draw(){
   }
 }
 
-// LOOP
+// ===== LOOP =====
 let last=0;
 function loop(t){
   const dt=(t-last)/1000;
@@ -300,11 +338,6 @@ function loop(t){
 }
 requestAnimationFrame(loop);
 
-// UTILS
-function clamp(v,min,max){
-  return Math.max(min,Math.min(max,v));
-}
 </script>
-
 </body>
 </html>
