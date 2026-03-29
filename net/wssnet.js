@@ -55,6 +55,15 @@
  *      Shows your ID and an input to enter a peer's ID.
  *      Auto-hides on successful pairing. Fires onPaired().
  *
+ *    net.mountMenu(container?)
+ *      Injects a floating ⋯ button (bottom-right) and a menu modal with:
+ *        • New Game     — clears session (new ID, back to pair screen)
+ *        • Fullscreen   — toggles browser fullscreen
+ *        • Change Server — clears saved URL and reloads
+ *        • Cancel       — closes the menu
+ *      Safe to call at any point after the game starts.
+ *      container defaults to document.body.
+ *
  *    net.send(data)
  *      Send any JSON-serializable object to your paired peer.
  *      data is received as-is in the peer's onMessage(data).
@@ -166,6 +175,49 @@ class WSSNet {
         }
       });
     }
+  }
+
+  // ── PUBLIC: MOUNT MENU ────────────────────────────────────
+  mountMenu(container = document.body) {
+    const el = document.createElement('div');
+    el.id = 'wssnet-menu-root';
+    el.innerHTML = `
+      <button class="wssnet-menu-btn" id="wssnet-menu-open">⋯</button>
+      <div class="wssnet-menu-overlay" id="wssnet-menu-overlay">
+        <div class="wssnet-menu-card">
+          <div class="wssnet-menu-title">MENU</div>
+          <button class="wssnet-menu-item" id="wssnet-menu-newgame">🔄 New Game</button>
+          <button class="wssnet-menu-item" id="wssnet-menu-fullscreen">⛶ Fullscreen</button>
+          <button class="wssnet-menu-item" id="wssnet-menu-server">🌐 Change Server</button>
+          <button class="wssnet-menu-cancel" id="wssnet-menu-cancel">cancel</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(el);
+
+    const overlay = el.querySelector('#wssnet-menu-overlay');
+    const open  = () => { overlay.style.display = 'flex'; };
+    const close = () => { overlay.style.display = 'none'; };
+
+    el.querySelector('#wssnet-menu-open').addEventListener('click', open);
+    el.querySelector('#wssnet-menu-cancel').addEventListener('click', close);
+
+    el.querySelector('#wssnet-menu-newgame').addEventListener('click', () => {
+      sessionStorage.clear();
+      location.reload();
+    });
+
+    el.querySelector('#wssnet-menu-fullscreen').addEventListener('click', () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+      close();
+    });
+
+    el.querySelector('#wssnet-menu-server').addEventListener('click', () => {
+      localStorage.removeItem('wssnet_url');
+      sessionStorage.clear();
+      location.reload();
+    });
   }
 
   // ── PUBLIC: MOUNT PAIR MODAL ───────────────────────────────
@@ -371,6 +423,39 @@ class WSSNet {
       .wssnet-btn:active { opacity: 0.85; }
       .wssnet-error {
         font-size: 12px; color: var(--wssnet-error); min-height: 16px; text-align: center;
+      }
+      /* ── Menu ── */
+      .wssnet-menu-btn {
+        position: fixed; bottom: 18px; right: 18px;
+        width: 44px; height: 44px; border-radius: 50%; border: none;
+        background: #ffffff55; color: white; font-size: 22px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(4px); z-index: 9001;
+        font-family: var(--wssnet-font);
+      }
+      .wssnet-menu-overlay {
+        position: fixed; inset: 0; background: #000e;
+        display: none; align-items: center; justify-content: center;
+        flex-direction: column; gap: 14px; z-index: 9002;
+        font-family: var(--wssnet-font);
+      }
+      .wssnet-menu-card {
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+      }
+      .wssnet-menu-title {
+        font-size: 16px; letter-spacing: 2px; color: #ffffffaa; margin-bottom: 4px;
+      }
+      .wssnet-menu-item {
+        width: 220px; padding: 14px; border-radius: 12px; border: none; cursor: pointer;
+        font-size: 16px; font-weight: bold; letter-spacing: 1px;
+        background: #ffffff33; color: white;
+        font-family: var(--wssnet-font);
+      }
+      .wssnet-menu-item:active { background: #ffffff44; }
+      .wssnet-menu-cancel {
+        margin-top: 4px; background: transparent; border: none;
+        color: #ffffff88; font-size: 13px; cursor: pointer; letter-spacing: 1px;
+        font-family: var(--wssnet-font);
       }
     `;
     document.head.appendChild(s);
