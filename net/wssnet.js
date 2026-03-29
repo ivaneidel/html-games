@@ -223,10 +223,11 @@ class WSSNet {
 
   // ── PUBLIC: MOUNT PAIR MODAL ───────────────────────────────
   mountPairModal(container = document.body) {
-    if (document.getElementById('wssnet-pair-modal')) return; // already mounted
+    if (document.getElementById('wssnet-pair-modal')) return;
     const el = document.createElement('div');
     el.id = 'wssnet-pair-modal';
     el.className = 'wssnet-overlay';
+    el.style.display = 'none'; // hidden until WSSNet shows it
     el.innerHTML = `
       <div class="wssnet-card">
         <div class="wssnet-title">🎲 CONNECT</div>
@@ -242,9 +243,6 @@ class WSSNet {
     container.appendChild(el);
     this._pairModalEl = el;
 
-    // Show myId if already known
-    if (this.myId) el.querySelector('#wssnet-my-id').innerText = this.myId;
-
     const submit = () => this._submitPair();
     el.querySelector('#wssnet-pair-btn').addEventListener('click', submit);
     el.querySelector('#wssnet-peer-input').addEventListener('keydown', e => {
@@ -252,7 +250,15 @@ class WSSNet {
     });
   }
 
-  // ── PRIVATE: SERVER SUBMIT ─────────────────────────────────
+  _showPairModal() {
+    const el = document.getElementById('wssnet-pair-modal');
+    if (el) el.style.display = 'flex';
+  }
+
+  _hidePairModal() {
+    const el = document.getElementById('wssnet-pair-modal');
+    if (el) el.style.display = 'none';
+  }
   _submitServer() {
     const input = document.getElementById('wssnet-server-input');
     if (!input || !input.value.trim()) return;
@@ -280,7 +286,8 @@ class WSSNet {
   }
 
   _hidePairModal() {
-    if (this._pairModalEl) this._pairModalEl.style.display = 'none';
+    const el = this._pairModalEl || document.getElementById('wssnet-pair-modal');
+    if (el) el.style.display = 'none';
   }
 
   // ── PRIVATE: PAIR SUBMIT ───────────────────────────────────
@@ -308,10 +315,11 @@ class WSSNet {
       if (msg.type === 'id') {
         this.myId = msg.id;
         this._saveId(msg.id);
-        // Update pair modal if mounted
         const codeEl = document.getElementById('wssnet-my-id');
         if (codeEl) codeEl.innerText = msg.id;
         this._cb.onReady(msg.id);
+        // Only show pair modal if not reconnecting (no peer yet)
+        if (!this.peer) this._showPairModal();
       }
 
       if (msg.type === 'connected') {
