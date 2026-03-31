@@ -296,7 +296,7 @@ const FC={ember:'fc-ember',verdant:'fc-verdant',aether:'fc-aether',stone:'fc-sto
 const FCOLOR={ember:'var(--ember)',verdant:'var(--verdant)',aether:'var(--aether)',stone:'var(--stone)',neutral:'var(--neutral)'};
 const TI={action:'⚡',fragment:'🔷',structure:'🏛️'};
 const SS_KEY='sf_save';
-const RETRY_MS=5000,RETRY_MAX=12;
+const RETRY_MS=5000,RETRY_MAX=24;
 const FACTIONS=['ember','verdant','aether','stone'];
 
 function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
@@ -373,7 +373,7 @@ function startRetry(msg){
   stopRetry();pendingMsg=msg;retryCt=0;
   retryTimer=setInterval(()=>{
     if(!net)return;retryCt++;
-    if(retryCt>RETRY_MAX){stopRetry();log('⚠️ Opponent unreachable for 60s.');setWaiting(true,'Game paused — opponent unreachable');return;}
+    if(retryCt>RETRY_MAX){stopRetry();log('⚠️ Opponent unreachable for 120s.');setWaiting(true,'Game paused — opponent unreachable');return;}
     net.send(pendingMsg);
   },RETRY_MS);
 }
