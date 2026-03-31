@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Shattered Flux</title>
+<script src="https://ivaneidel.github.io/html-games/net/wssnet.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+:root{
+  --bg:#0d0d1a;--panel:#13132a;--panel2:#1a1a35;--border:#2a2a4a;
+  --ember:#e05a2b;--verdant:#4caf50;--aether:#7c6fff;--stone:#c09050;--neutral:#888;
+  --flux:#e74c3c;--focus:#3498db;--disruption:#e67e22;
+  --text:#ddd;--dim:#666;--card-bg:#1a1a35;
+  --wssnet-accent:#7c6fff;--wssnet-card-bg:#13132a;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;font-size:13px;display:flex;flex-direction:column}
+
+/* MODE OVERLAY */
+#mode-overlay{position:fixed;inset:0;background:#000d;z-index:8000;display:flex;align-items:center;justify-content:center}
+#mode-box{background:#13132a;border:1px solid #7c6fff;border-radius:16px;padding:32px 28px;width:min(320px,90vw);display:flex;flex-direction:column;align-items:center;gap:14px}
+#mode-box h1{font-size:22px;letter-spacing:2px;color:var(--aether)}
+#mode-box p{font-size:12px;color:var(--dim);text-align:center}
+.mode-btn{width:100%;padding:14px;border-radius:10px;border:none;font-size:15px;font-weight:700;letter-spacing:1px;cursor:pointer}
+.mode-btn.sp{background:var(--aether);color:#fff}
+.mode-btn.mp{background:var(--panel2);color:var(--text);border:1px solid var(--border)}
+
+/* FACTION MODAL */
+#faction-overlay{position:fixed;inset:0;background:#000e;z-index:9000;display:none;align-items:center;justify-content:center;padding:12px}
+#faction-overlay.show{display:flex}
+#faction-box{background:#13132a;border:1px solid var(--aether);border-radius:16px;width:min(380px,100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+#faction-box h2{font-size:16px;letter-spacing:2px;color:var(--aether);text-align:center;padding:16px 16px 8px}
+#faction-box p.sub{font-size:11px;color:var(--dim);text-align:center;padding:0 16px 10px}
+.faction-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+.ftab{flex:1;padding:8px 4px;font-size:11px;font-weight:700;text-align:center;cursor:pointer;border-bottom:2px solid transparent;color:var(--dim);transition:all .15s}
+.ftab.active{color:#fff;border-bottom-color:var(--aether)}
+.ftab[data-f=ember].active{border-bottom-color:var(--ember);color:var(--ember)}
+.ftab[data-f=verdant].active{border-bottom-color:var(--verdant);color:var(--verdant)}
+.ftab[data-f=aether].active{border-bottom-color:var(--aether);color:var(--aether)}
+.ftab[data-f=stone].active{border-bottom-color:var(--stone);color:var(--stone)}
+#faction-detail{flex:1;overflow-y:auto;padding:14px 16px}
+.fd-name{font-size:18px;font-weight:700;margin-bottom:4px}
+.fd-bonus{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;font-size:11px;color:#ccc;line-height:1.5}
+.fd-bonus strong{display:block;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+.fd-card-preview{background:var(--panel2);border-radius:8px;padding:10px;margin-bottom:10px}
+.fd-card-preview strong{display:block;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:8px}
+#faction-confirm{margin:0 16px 8px;padding:12px;border-radius:10px;border:none;font-size:15px;font-weight:700;cursor:pointer;color:#fff;letter-spacing:1px}
+#faction-close-btn{display:none;margin:0 16px 16px;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--panel2);font-size:13px;cursor:pointer;color:var(--text);text-align:center}
+#faction-waiting{text-align:center;padding:4px 16px 16px;font-size:11px;color:var(--dim)}
+
+/* CARD PREVIEW MODAL */
+#preview-ov{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:none;align-items:center;justify-content:center;padding:20px}
+#preview-ov.show{display:flex}
+#preview-card-wrap{
+  position:relative;
+  width:min(72vw,300px);
+  min-height:min(96vw,400px);
+  background:var(--card-bg);
+  border:2px solid var(--aether);
+  border-radius:16px;
+  padding:20px 16px 16px;
+  display:flex;flex-direction:column;gap:8px;
+}
+#preview-close{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--dim);font-size:22px;cursor:pointer;line-height:1;padding:2px}
+#preview-card-wrap .c-faction{font-size:12px}
+#preview-card-wrap .c-name{font-size:22px;line-height:1.2;padding-right:0}
+#preview-card-wrap .c-cost{position:static;display:inline-block;font-size:20px;font-weight:700;color:var(--focus);margin-top:2px}
+#preview-card-wrap .c-body{font-size:14px;line-height:1.7}
+#preview-card-wrap .c-combo{font-size:12px}
+#preview-card-wrap .c-tag{font-size:11px;margin-top:8px}
+
+/* WAITING STRIP */
+#waiting-strip{display:none;background:#1a1a0a;border-bottom:2px solid var(--disruption);padding:4px 10px;flex-shrink:0;align-items:center;justify-content:space-between;gap:6px}
+#waiting-strip.show{display:flex}
+#waiting-strip span{font-size:10px;color:var(--disruption);font-weight:700;letter-spacing:.5px}
+#waiting-strip small{font-size:9px;color:var(--dim)}
+
+/* HEADER */
+#hdr{display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;gap:4px;min-height:0}
+#hdr h1{font-size:12px;letter-spacing:1px;color:var(--aether);white-space:nowrap;flex-shrink:0}
+.hdr-right{display:flex;align-items:center;gap:4px;flex-shrink:0}
+#turn-badge{font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1;text-align:center}
+#log-btn,#fs-btn{background:none;border:1px solid var(--border);color:var(--dim);border-radius:5px;padding:3px 6px;font-size:10px;cursor:pointer;flex-shrink:0;white-space:nowrap}
+
+/* AI ZONE */
+#ai-zone{flex-shrink:0;background:var(--panel);border-bottom:1px solid var(--border);padding:5px 10px}
+.zone-header{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:nowrap}
+.zone-name{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--dim);text-transform:uppercase;flex-shrink:0}
+.faction-badge{font-size:10px;font-weight:700;padding:1px 5px;border-radius:4px;background:var(--panel2);border:1px solid var(--border);cursor:pointer;flex-shrink:0;white-space:nowrap}
+.faction-badge:active{opacity:.7}
+.flux-wrap{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+.flux-track{flex:1;background:#1a0a0a;border-radius:4px;height:6px;overflow:hidden;min-width:0}
+.flux-fill{height:100%;background:var(--flux);border-radius:4px;transition:width .4s}
+.flux-num{font-size:11px;font-weight:700;color:var(--flux);min-width:24px;text-align:right;flex-shrink:0}
+.deck-info{display:flex;gap:4px;font-size:9px;color:var(--dim);flex-shrink:0}
+.deck-info span{background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:1px 4px}
+.persistent-row{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;min-height:4px}
+.mini-card{background:var(--panel2);border:1px solid var(--border);border-radius:5px;padding:3px 6px;font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer}
+
+/* MAIN PANEL */
+#panel-main{flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:5px;min-height:0}
+#panel-main::-webkit-scrollbar{width:3px}
+#panel-main::-webkit-scrollbar-thumb{background:var(--border)}
+.section-label{font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;padding:0 2px}
+.cards-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}
+.cards-row::-webkit-scrollbar{height:3px}
+.cards-row::-webkit-scrollbar-thumb{background:var(--border)}
+
+/* CARDS */
+.card{min-width:100px;width:100px;background:var(--card-bg);border:1px solid var(--border);border-radius:9px;padding:8px 7px 7px;flex-shrink:0;display:flex;flex-direction:column;gap:2px;position:relative;transition:transform .12s,border-color .12s,opacity .2s}
+.card.tappable{cursor:pointer;border-color:#383860}
+.card.tappable:active{transform:scale(.94)}
+.card.played{opacity:.35;border-color:var(--border)}
+.card.locked{opacity:.35;border-color:var(--border)}
+.card.buyable{border-color:#2a4a2a;cursor:pointer}
+.card.buyable:active{transform:scale(.94)}
+.card.no-focus{opacity:.4}
+.card.fragment-type{border-color:#4a3a8a}
+.card.structure-type{border-color:#5a4020}
+.card.common-type{border-color:#3a3a3a}
+.c-faction{font-size:9px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:1px}
+.c-name{font-weight:700;font-size:12px;line-height:1.2}
+.c-cost{position:absolute;top:6px;right:7px;font-weight:700;font-size:13px;color:var(--focus)}
+.c-body{font-size:10px;color:#aaa;line-height:1.45;flex:1}
+.c-combo{font-size:9px;color:#666;margin-top:3px;font-style:italic;border-top:1px solid #222;padding-top:3px}
+.c-tag{display:inline-block;font-size:8px;padding:1px 5px;border-radius:3px;margin-top:3px;font-weight:700;letter-spacing:.5px}
+.tag-fragment{background:#2a1a5a;color:var(--aether)}
+.tag-structure{background:#2a1a0a;color:var(--stone)}
+.tag-action{background:#1a1a2a;color:#666}
+.tag-common{background:#2a2a2a;color:#aaa}
+.fc-ember{color:var(--ember)}.fc-verdant{color:var(--verdant)}.fc-aether{color:var(--aether)}.fc-stone{color:var(--stone)}.fc-neutral{color:var(--neutral)}
+
+/* PLAYER BAR */
+#player-bar{flex-shrink:0;background:var(--panel);border-top:1px solid var(--border);padding:5px 8px;display:flex;align-items:center;gap:5px;min-height:0}
+.stat-pill{display:flex;align-items:center;gap:3px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:3px 6px;flex-shrink:0}
+.stat-pill .lbl{font-size:8px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+.stat-pill .val{font-size:14px;font-weight:700}
+.pill-focus .val{color:var(--focus)}.pill-disrupt .val{color:var(--disruption)}.pill-flux .val{color:var(--flux)}
+.pill-flux{flex:1;min-width:0}
+.pill-flux-inner{flex:1;margin-left:4px;min-width:0}
+#player-faction-badge{font-size:10px;font-weight:700;padding:3px 6px;border-radius:6px;background:var(--panel2);border:1px solid var(--border);white-space:nowrap;cursor:pointer;flex-shrink:0}
+#player-faction-badge:active{opacity:.7}
+#end-btn{background:var(--aether);color:#fff;border:none;border-radius:8px;padding:8px 10px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+#end-btn:disabled{background:#2a2a4a;color:#555;cursor:default}
+
+/* LOG */
+#live-log{flex-shrink:0;padding:2px 10px;font-size:10px;color:var(--dim);background:#0a0a14;border-top:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#log-drawer{position:fixed;bottom:0;left:0;right:0;background:#0a0a18;border-top:2px solid var(--aether);z-index:50;transform:translateY(100%);transition:transform .25s;max-height:45vh;display:flex;flex-direction:column}
+#log-drawer.open{transform:translateY(0)}
+#log-head{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
+#log-head span{font-size:11px;font-weight:700;letter-spacing:1px;color:var(--aether)}
+#log-close{background:none;border:none;color:var(--dim);font-size:18px;cursor:pointer;padding:0 4px}
+#log-list{overflow-y:auto;padding:8px 12px;flex:1;font-size:11px;line-height:1.9;color:#bbb}
+#log-list::-webkit-scrollbar{width:3px}
+#log-list::-webkit-scrollbar-thumb{background:var(--border)}
+
+/* MODALS */
+#modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;display:none;align-items:flex-end;justify-content:center}
+#modal-ov.show{display:flex}
+#modal-box{background:#14142e;border:1px solid var(--aether);border-radius:14px 14px 0 0;padding:18px;width:100%;max-width:420px}
+#modal-box h2{font-size:15px;margin-bottom:6px}
+#modal-box p{font-size:11px;color:#aaa;margin-bottom:10px}
+.modal-cards{display:flex;flex-wrap:wrap;gap:6px;padding-bottom:6px;margin-bottom:10px;overflow-x:auto}
+.modal-cards::-webkit-scrollbar{height:3px}
+.modal-cards::-webkit-scrollbar-thumb{background:var(--border)}
+.modal-section-lbl{font-size:9px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;padding:2px 4px;flex-basis:100%;flex-shrink:0}
+.modal-card-sel{border-color:var(--aether)!important;cursor:pointer}
+.modal-card-sel:active{transform:scale(.94)}
+.modal-btns{display:flex;gap:8px}
+.m-btn{flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--panel2);color:var(--text);font-size:13px;cursor:pointer}
+.m-btn.primary{background:var(--aether);border-color:var(--aether);font-weight:700}
+
+/* END GAME */
+#go{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:none;align-items:center;justify-content:center;flex-direction:column;gap:14px}
+#go.show{display:flex}
+#go h1{font-size:30px}
+#go p{color:var(--dim);font-size:13px;text-align:center;padding:0 24px}
+#go button{background:var(--aether);color:#fff;border:none;border-radius:10px;padding:12px 32px;font-size:15px;cursor:pointer;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div id="mode-overlay">
+  <div id="mode-box">
+    <h1>⚗️ SHATTERED FLUX</h1>
+    <p>Choose your game mode</p>
+    <button class="mode-btn sp" onclick="startSP()">⚔️ Single Player</button>
+    <button class="mode-btn mp" onclick="startMP()">🌐 Multiplayer</button>
+  </div>
+</div>
+
+<!-- FACTION MODAL -->
+<div id="faction-overlay">
+  <div id="faction-box">
+    <h2 id="faction-modal-title">⚗️ CHOOSE FACTION</h2>
+    <p class="sub" id="faction-modal-sub">Your faction defines your starting fragment and identity bonus</p>
+    <div class="faction-tabs" id="faction-tabs"></div>
+    <div id="faction-detail"></div>
+    <button id="faction-confirm" onclick="confirmFaction()">Confirm Faction</button>
+    <button id="faction-close-btn" onclick="closeFactionInfo()">Close</button>
+    <div id="faction-waiting" style="display:none">⏳ Waiting for opponent to choose…</div>
+  </div>
+</div>
+
+<!-- CARD PREVIEW MODAL -->
+<div id="preview-ov" onclick="closePreview()">
+  <div id="preview-card-wrap" onclick="e=>e.stopPropagation()">
+    <button id="preview-close" onclick="closePreview()">✕</button>
+    <span id="pv-faction" class="c-faction"></span>
+    <span id="pv-name" class="c-name"></span>
+    <span id="pv-cost" class="c-cost" style="display:none"></span>
+    <span id="pv-body" class="c-body"></span>
+    <span id="pv-combo" class="c-combo" style="display:none"></span>
+    <span id="pv-tag" class="c-tag"></span>
+  </div>
+</div>
+
+<div id="waiting-strip">
+  <span>⏳ OPPONENT'S TURN</span>
+  <small id="waiting-sub">Waiting…</small>
+</div>
+
+<div id="hdr">
+  <h1>⚗️ FLUX</h1>
+  <span id="turn-badge">Turn 1 · Your Turn</span>
+  <div class="hdr-right">
+    <button id="log-btn" onclick="toggleLog()">📋</button>
+    <button id="fs-btn" onclick="toggleFS()">⛶</button>
+  </div>
+</div>
+
+<div id="ai-zone">
+  <div class="zone-header">
+    <span class="zone-name" id="opp-label">🤖 AI</span>
+    <span class="faction-badge" id="opp-faction-badge" style="display:none" onclick="showFactionInfoFor('ai')"></span>
+    <div class="flux-wrap">
+      <div class="flux-track"><div class="flux-fill" id="ai-flux-fill" style="width:100%"></div></div>
+      <span class="flux-num" id="ai-flux-num">45</span>
+    </div>
+    <div class="deck-info">
+      <span id="ai-deck-ct">🂠 11</span>
+      <span id="ai-disc-ct">♻ 0</span>
+      <span id="ai-hand-ct">🤚 5</span>
+    </div>
+  </div>
+  <div class="persistent-row" id="ai-persistent"></div>
+</div>
+
+<div id="panel-main">
+  <div class="section-label">🛒 Market <span style="font-weight:normal;color:var(--dim)" id="mkt-left"></span></div>
+  <div class="cards-row" id="market-row"></div>
+  <div class="section-label" style="margin-top:4px">▶ Your Hand <span id="hand-count" style="font-weight:normal;color:var(--dim)"></span></div>
+  <div class="cards-row" id="hand-row"></div>
+  <div class="section-label" style="margin-top:4px">🔷 In Play <span id="frag-count" style="font-weight:normal;color:var(--dim)"></span></div>
+  <div class="cards-row" id="player-persistent"></div>
+  <div style="margin-top:3px;display:flex;gap:8px;font-size:10px;color:var(--dim)">
+    <span id="p-deck-ct">🂠 Deck: 6</span>
+    <span id="p-disc-ct">♻ Discard: 0</span>
+  </div>
+</div>
+
+<div id="player-bar">
+  <div class="stat-pill pill-flux">
+    <div><div class="lbl">FLUX</div><div class="val" id="p-flux">45</div></div>
+    <div class="pill-flux-inner"><div class="flux-track" style="height:5px"><div class="flux-fill" id="p-flux-fill" style="width:100%"></div></div></div>
+  </div>
+  <div class="stat-pill pill-focus"><div><div class="lbl">FOC</div><div class="val" id="p-focus">0</div></div></div>
+  <div class="stat-pill pill-disrupt"><div><div class="lbl">DIS</div><div class="val" id="p-disrupt">0</div></div></div>
+  <span id="player-faction-badge" style="display:none" onclick="showFactionInfoFor('player')"></span>
+  <button id="end-btn" onclick="endPlayerTurn()">End ⚔️</button>
+</div>
+
+<div id="live-log" onclick="toggleLog()">Tap for full log…</div>
+<div id="log-drawer">
+  <div id="log-head"><span>📋 GAME LOG</span><button id="log-close" onclick="toggleLog()">✕</button></div>
+  <div id="log-list"></div>
+</div>
+
+<div id="modal-ov">
+  <div id="modal-box">
+    <h2 id="m-title"></h2><p id="m-desc"></p>
+    <div class="modal-cards" id="m-cards"></div>
+    <div class="modal-btns" id="m-btns"></div>
+  </div>
+</div>
+
+<div id="go">
+  <h1 id="go-title"></h1><p id="go-sub"></p>
+  <button onclick="location.reload()">Play Again</button>
+</div>
+
+<script>
+const FI={ember:'🔥',verdant:'🌿',aether:'🌪️',stone:'🪨',neutral:'⚪'};
+const FC={ember:'fc-ember',verdant:'fc-verdant',aether:'fc-aether',stone:'fc-stone',neutral:'fc-neutral'};
+const FCOLOR={ember:'var(--ember)',verdant:'var(--verdant)',aether:'var(--aether)',stone:'var(--stone)',neutral:'var(--neutral)'};
+const TI={action:'⚡',fragment:'🔷',structure:'🏛️'};
+const SS_KEY='sf_save';
+const RETRY_MS=5000,RETRY_MAX=12;
+const FACTIONS=['ember','verdant','aether','stone'];
+
+function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+function opp(w){return w==='player'?'ai':'player';}
+
+const FACTION_INFO={
+  ember:{name:'🔥 Ember',color:'var(--ember)',bonus:'Once per turn: if you deal 4+ Disruption total, gain +1 Disruption.',startFrag:'ember_spark'},
+  verdant:{name:'🌿 Verdant',color:'var(--verdant)',bonus:'Once per turn: the first time you gain Flux, gain +1 additional Flux.',startFrag:'verdant_seed'},
+  aether:{name:'🌪️ Aether',color:'var(--aether)',bonus:'Once per turn: the first time you draw cards, draw +1 additional card.',startFrag:'aether_node'},
+  stone:{name:'🪨 Stone',color:'var(--stone)',bonus:'Once per turn: your first card buy costs −1 Focus.',startFrag:'stone_core'},
+};
+
+const MARKET_BASE=[
+  {id:'spark_raider',name:'Spark Raider',f:'ember',t:'action',cost:2,text:'+2 Disruption',combo:'+1 Disruption',play(S,w){addD(S,w,2)},cx(S,w){addD(S,w,1)}},
+  {id:'overheat_channel',name:'Overheat Channel',f:'ember',t:'action',cost:4,text:'+4 Disruption · Lose 2 Flux',combo:'Draw 1',play(S,w){addD(S,w,4);loseF(S,w,2)},cx(S,w){draw(S,w,1)}},
+  {id:'cinder_fragment',name:'Cinder Fragment',f:'ember',t:'fragment',cost:5,text:'Passive: +1 Disruption/turn · End: Lose 1 Flux',combo:'+1 Disruption',play(S,w){},cx(S,w){addD(S,w,1)},pass(S,w){addD(S,w,1)},eot(S,w){loseF(S,w,1)}},
+  {id:'flash_surge',name:'Flash Surge',f:'ember',t:'action',cost:3,text:'+2 Disruption · May lose 1 Flux → Draw 1',combo:'+1 Disruption',play(S,w,cb){addD(S,w,2);mayLoseDraw(S,w,cb)},cx(S,w){addD(S,w,1)}},
+  {id:'scorch_loop',name:'Scorch Loop',f:'ember',t:'action',cost:6,text:'+3 Disruption · May scrap from hand → +2 Disruption',combo:'Opp −1 Flux',play(S,w,cb){addD(S,w,3);mayScrapHand4D(S,w,cb)},cx(S,w){loseF(S,opp(w),1)}},
+  {id:'bloom_initiate',name:'Bloom Initiate',f:'verdant',t:'action',cost:2,text:'+2 Flux',combo:'+1 Flux',play(S,w){gainF(S,w,2)},cx(S,w){gainF(S,w,1)}},
+  {id:'root_network',name:'Root Network',f:'verdant',t:'fragment',cost:4,text:'Passive: +1 Flux/turn',combo:'+1 Focus',play(S,w){},cx(S,w){addFoc(S,w,1)},pass(S,w){gainF(S,w,1)}},
+  {id:'verdant_convergence',name:'Verdant Convergence',f:'verdant',t:'action',cost:6,text:'+3 Flux · 2+ Frags → Draw 1',combo:'+1 Flux',play(S,w){gainF(S,w,3);if(S[w].frags.length>=2)draw(S,w,1)},cx(S,w){gainF(S,w,1)}},
+  {id:'spreading_canopy',name:'Spreading Canopy',f:'verdant',t:'action',cost:3,text:'+1 Flux · Frag → +1 Focus',combo:'+1 Flux',play(S,w){gainF(S,w,1);if(S[w].frags.length>0)addFoc(S,w,1)},cx(S,w){gainF(S,w,1)}},
+  {id:'living_core',name:'Living Core',f:'verdant',t:'fragment',cost:6,text:'Passive: +1 Flux/turn · 3+ Frags → +1 Disruption/turn',combo:'+1 Flux',play(S,w){},cx(S,w){gainF(S,w,1)},pass(S,w){gainF(S,w,1);if(S[w].frags.length>=3)addD(S,w,1)}},
+  {id:'phase_insight',name:'Phase Insight',f:'aether',t:'action',cost:3,text:'Draw 2',combo:'+1 Disruption',play(S,w){draw(S,w,2)},cx(S,w){addD(S,w,1)}},
+  {id:'flux_drift',name:'Flux Drift',f:'aether',t:'action',cost:4,text:'Draw 1 · May scrap from hand',combo:'Draw 1',play(S,w,cb){draw(S,w,1);mayScrapHand(S,w,cb)},cx(S,w){draw(S,w,1)}},
+  {id:'echo_fragment',name:'Echo Fragment',f:'aether',t:'fragment',cost:5,text:'Passive: First Action/turn triggers twice',combo:'Draw 1',play(S,w){},cx(S,w){draw(S,w,1)}},
+  {id:'temporal_glitch',name:'Temporal Glitch',f:'aether',t:'action',cost:3,text:'Draw 1 · Return card from discard',combo:'Draw 1',play(S,w,cb){draw(S,w,1);pickFromDiscard(S,w,cb)},cx(S,w){draw(S,w,1)}},
+  {id:'phase_collapse',name:'Phase Collapse',f:'aether',t:'action',cost:6,text:'+2 Disruption · Opp discards 1',combo:'Draw 1',play(S,w){addD(S,w,2);oppDiscardRnd(S,w)},cx(S,w){draw(S,w,1)}},
+  {id:'core_miner',name:'Core Miner',f:'stone',t:'action',cost:2,text:'+2 Focus',combo:'+1 Focus',play(S,w){addFoc(S,w,2)},cx(S,w){addFoc(S,w,1)}},
+  {id:'foundation_node',name:'Foundation Node',f:'stone',t:'structure',cost:4,text:'Passive: +1 Focus/turn',combo:'+1 Flux',play(S,w){},cx(S,w){gainF(S,w,1)},pass(S,w){addFoc(S,w,1)}},
+  {id:'load_distributor',name:'Load Distributor',f:'stone',t:'action',cost:5,text:'+3 Focus · May lose 1 Flux → Draw 1',combo:'+1 Focus',play(S,w,cb){addFoc(S,w,3);mayLoseDraw(S,w,cb)},cx(S,w){addFoc(S,w,1)}},
+  {id:'reinforced_grid',name:'Reinforced Grid',f:'stone',t:'action',cost:3,text:'+1 Focus · +2 Flux',combo:'+1 Focus',play(S,w){addFoc(S,w,1);gainF(S,w,2)},cx(S,w){addFoc(S,w,1)}},
+  {id:'bastion_core',name:'Bastion Core',f:'stone',t:'structure',cost:6,text:'Passive: First Flux loss/turn −1',combo:'+1 Flux',play(S,w){},cx(S,w){gainF(S,w,1)}},
+  {id:'fragment_extractor',name:'Fragment Extractor',f:'neutral',t:'action',cost:3,text:'Scrap from hand or discard · +1 Focus',play(S,w,cb){addFoc(S,w,1);mayScrapHandOrDisc(S,w,cb)}},
+  {id:'unstable_core',name:'Unstable Core',f:'neutral',t:'fragment',cost:6,text:'Passive: +2 Focus/turn · End: −2 Flux · Any faction',play(S,w){},pass(S,w){addFoc(S,w,2)},eot(S,w){loseF(S,w,2)}},
+  {id:'pulse_refinery',name:'Pulse Refinery',f:'neutral',t:'action',cost:4,text:'+2 Focus · May scrap from discard',play(S,w,cb){addFoc(S,w,2);mayScrapDisc(S,w,cb)}},
+  {id:'wild_surge',name:'Wild Surge',f:'neutral',t:'action',cost:5,text:'+2 Disruption · +2 Focus · −1 Flux',play(S,w){addD(S,w,2);addFoc(S,w,2);loseF(S,w,1)}},
+  {id:'spark_shard',name:'Spark Shard',f:'neutral',t:'action',cost:2,common:true,text:'+1 Focus · +1 Disruption',play(S,w){addFoc(S,w,1);addD(S,w,1)}},
+  {id:'spark_shard',name:'Spark Shard',f:'neutral',t:'action',cost:2,common:true,text:'+1 Focus · +1 Disruption',play(S,w){addFoc(S,w,1);addD(S,w,1)}},
+  {id:'quick_pulse',name:'Quick Pulse',f:'neutral',t:'action',cost:2,common:true,text:'+2 Disruption · Lose 1 Flux',play(S,w){addD(S,w,2);loseF(S,w,1)}},
+  {id:'quick_pulse',name:'Quick Pulse',f:'neutral',t:'action',cost:2,common:true,text:'+2 Disruption · Lose 1 Flux',play(S,w){addD(S,w,2);loseF(S,w,1)}},
+  {id:'minor_refinement',name:'Minor Refinement',f:'neutral',t:'action',cost:2,common:true,text:'Scrap a card from your hand',play(S,w,cb){mayScrapHand(S,w,cb)}},
+  {id:'minor_refinement',name:'Minor Refinement',f:'neutral',t:'action',cost:2,common:true,text:'Scrap a card from your hand',play(S,w,cb){mayScrapHand(S,w,cb)}},
+];
+
+const CARD_MAP={};
+MARKET_BASE.forEach(c=>{if(!CARD_MAP[c.id])CARD_MAP[c.id]=c;});
+[
+  {id:'basic_shard',name:'Basic Shard',f:'neutral',t:'action',cost:0,text:'+1 Focus',play(S,w){addFoc(S,w,1)}},
+  {id:'pulse_strike',name:'Pulse Strike',f:'neutral',t:'action',cost:0,text:'+2 Disruption',play(S,w){addD(S,w,2)}},
+  {id:'ember_spark',name:'Ember Spark',f:'ember',t:'fragment',cost:0,text:'On play: +1 Disruption',combo:'+1 Disruption',play(S,w){addD(S,w,1)},cx(S,w){addD(S,w,1)}},
+  {id:'verdant_seed',name:'Verdant Seed',f:'verdant',t:'fragment',cost:0,text:'On play: Gain 2 Flux',play(S,w){gainF(S,w,2)}},
+  {id:'aether_node',name:'Aether Node',f:'aether',t:'fragment',cost:0,text:'On play: Draw 1 card',play(S,w){draw(S,w,1)}},
+  {id:'stone_core',name:'Stone Core',f:'stone',t:'fragment',cost:0,text:'On play: +1 Focus',combo:'+1 Focus',play(S,w){addFoc(S,w,1)},cx(S,w){addFoc(S,w,1)}},
+].forEach(c=>CARD_MAP[c.id]=c);
+
+function STARTER(faction){
+  return[
+    ...Array(8).fill(0).map(()=>({...CARD_MAP['basic_shard']})),
+    ...Array(2).fill(0).map(()=>({...CARD_MAP['pulse_strike']})),
+    {...CARD_MAP[FACTION_INFO[faction].startFrag]},
+  ];
+}
+function buildMarketDeck(){return shuffle(MARKET_BASE.map(c=>({...c})));}
+
+// ── NET / STATE ───────────────────────────────────────────────────────────────
+let MODE=null,net=null,myId=null,peerId=null,myTurn=false;
+let pendingMsg=null,retryTimer=null,retryCt=0,lastAppliedSeq=-1;
+let myFaction=null,peerFaction=null,factionConfirmed=false,factionPeerConfirmed=false;
+let factionPendingMsg=null,factionRetryTimer=null,factionRetryCt=0;
+let G,playedSet;
+
+function startRetry(msg){
+  stopRetry();pendingMsg=msg;retryCt=0;
+  retryTimer=setInterval(()=>{
+    if(!net)return;retryCt++;
+    if(retryCt>RETRY_MAX){stopRetry();log('⚠️ Opponent unreachable for 60s.');setWaiting(true,'Game paused — opponent unreachable');return;}
+    net.send(pendingMsg);
+  },RETRY_MS);
+}
+function stopRetry(){if(retryTimer){clearInterval(retryTimer);retryTimer=null;}pendingMsg=null;retryCt=0;}
+
+function startFactionRetry(msg){
+  stopFactionRetry();factionPendingMsg=msg;factionRetryCt=0;
+  factionRetryTimer=setInterval(()=>{
+    if(!net)return;factionRetryCt++;
+    if(factionRetryCt>RETRY_MAX){stopFactionRetry();return;}
+    net.send(factionPendingMsg);
+  },RETRY_MS);
+}
+function stopFactionRetry(){if(factionRetryTimer){clearInterval(factionRetryTimer);factionRetryTimer=null;}factionPendingMsg=null;factionRetryCt=0;}
+
+// ── PERSISTENCE ───────────────────────────────────────────────────────────────
+function saveAll(){
+  if(!G)return;
+  sessionStorage.setItem(SS_KEY,JSON.stringify({
+    turn:G.turn,activeId:sessionStorage.getItem('sf_active_id')||'',
+    lastAppliedSeq,playedSet:[...playedSet],
+    pendingMsg:pendingMsg||null,factionPendingMsg:factionPendingMsg||null,
+    myFaction,peerFaction,factionConfirmed,factionPeerConfirmed,
+    market:G.market.map(c=>c.id),mktDeck:G.mktDeck.map(c=>c.id),
+    player:serP(G.player),ai:serP(G.ai),
+  }));
+}
+function loadAll(){
+  try{
+    const d=JSON.parse(sessionStorage.getItem(SS_KEY));
+    if(!d)return false;
+    G.turn=d.turn;G.market=hydList(d.market);G.mktDeck=hydList(d.mktDeck);
+    G.player=hydP(d.player);G.ai=hydP(d.ai);
+    lastAppliedSeq=d.lastAppliedSeq??-1;playedSet=new Set(d.playedSet||[]);
+    pendingMsg=d.pendingMsg||null;factionPendingMsg=d.factionPendingMsg||null;
+    myFaction=d.myFaction||null;peerFaction=d.peerFaction||null;
+    factionConfirmed=d.factionConfirmed||false;factionPeerConfirmed=d.factionPeerConfirmed||false;
+    if(d.activeId)sessionStorage.setItem('sf_active_id',d.activeId);
+    return true;
+  }catch(e){return false;}
+}
+function setActiveId(id){sessionStorage.setItem('sf_active_id',id);}
+function amIActive(){return sessionStorage.getItem('sf_active_id')===myId;}
+
+// ── PLAYER FACTORY ────────────────────────────────────────────────────────────
+function mkPlayer(faction){
+  return{flux:45,focus:0,disrupt:0,deck:shuffle(STARTER(faction||'ember')),
+    hand:[],discard:[],frags:[],structs:[],faction:faction||'ember',factions:new Set(),
+    echoUsed:false,bastionUsed:false,boughtThisTurn:0,playedThisTurn:0,commonBoughtThisTurn:0,
+    emberBonusUsed:false,verdantFirstGainUsed:false,aetherFirstDrawUsed:false,stoneFirstBuyUsed:false};
+}
+function initEmptyGame(){
+  G={player:mkPlayer('ember'),ai:mkPlayer('ember'),market:[],mktDeck:[],turn:1,phase:'wait'};
+  playedSet=new Set();render();
+}
+function initGame(pf,af){
+  G={player:mkPlayer(pf),ai:mkPlayer(af),market:[],mktDeck:buildMarketDeck(),turn:1,phase:'player'};
+  playedSet=new Set();
+  for(let i=0;i<5;i++)refill();
+  draw(G,'player',5);draw(G,'ai',5);applyPassives('player');
+  log('⚗️ New game! Your turn.');render();
+}
+function initHostGame(pf,af){
+  G={player:mkPlayer(pf),ai:mkPlayer(af),market:[],mktDeck:buildMarketDeck(),turn:1,phase:'player'};
+  playedSet=new Set();
+  for(let i=0;i<5;i++)refill();
+  draw(G,'player',5);draw(G,'ai',5);
+  setActiveId(myId);myTurn=true;lastAppliedSeq=-1;
+  applyPassives('player');setWaiting(false);log('⚗️ You go first!');
+  saveAll();render();
+  const msg=buildStateMsg(0);
+  setTimeout(()=>{net.send(msg);startRetry(msg);},300);
+}
+function refill(){while(G.market.length<5&&G.mktDeck.length>0)G.market.push({...G.mktDeck.pop()});}
+
+// ── FACTION MODAL ─────────────────────────────────────────────────────────────
+let selectedFaction='ember';
+let factionModalMode='pick'; // 'pick' | 'info'
+
+function showFactionModal(onConfirm){
+  factionModalMode='pick';
+  const ov=document.getElementById('faction-overlay');
+  ov.style.display='flex';ov._onConfirm=onConfirm;
+  document.getElementById('faction-modal-title').textContent='⚗️ CHOOSE FACTION';
+  document.getElementById('faction-modal-sub').textContent='Your faction defines your starting fragment and identity bonus';
+  document.getElementById('faction-confirm').style.display='block';
+  document.getElementById('faction-close-btn').style.display='none';
+  document.getElementById('faction-waiting').style.display='none';
+  buildFactionTabs(true);selectFactionTab('ember');
+}
+function showFactionInfoFor(who){
+  if(!G)return;
+  const f=G[who].faction;
+  factionModalMode='info';
+  const ov=document.getElementById('faction-overlay');
+  ov.style.display='flex';
+  document.getElementById('faction-modal-title').textContent='⚗️ FACTION INFO';
+  document.getElementById('faction-modal-sub').textContent='';
+  document.getElementById('faction-confirm').style.display='none';
+  document.getElementById('faction-close-btn').style.display='block';
+  document.getElementById('faction-waiting').style.display='none';
+  buildFactionTabs(false);selectFactionTab(f);
+}
+function closeFactionInfo(){
+  document.getElementById('faction-overlay').style.display='none';
+}
+function buildFactionTabs(interactive){
+  const tabs=document.getElementById('faction-tabs');tabs.innerHTML='';
+  FACTIONS.forEach(f=>{
+    const t=document.createElement('div');
+    t.className='ftab';t.dataset.f=f;t.textContent=FACTION_INFO[f].name;
+    if(interactive)t.onclick=()=>selectFactionTab(f);
+    else t.onclick=()=>selectFactionTab(f);
+    tabs.appendChild(t);
+  });
+}
+function selectFactionTab(f){
+  selectedFaction=f;
+  document.querySelectorAll('.ftab').forEach(t=>t.classList.toggle('active',t.dataset.f===f));
+  const fi=FACTION_INFO[f];
+  const frag=CARD_MAP[fi.startFrag];
+  document.getElementById('faction-detail').innerHTML=`
+    <div class="fd-name" style="color:${fi.color}">${fi.name}</div>
+    <div class="fd-bonus"><strong>🎯 Identity Bonus</strong>${fi.bonus}</div>
+    <div class="fd-card-preview">
+      <strong>📦 Starting Fragment</strong>
+      <div class="card" style="width:100%;min-width:0;margin-top:6px">
+        <span class="c-faction ${FC[frag.f]||'fc-neutral'}">${FI[frag.f]||''} ${(frag.f||'').toUpperCase()}</span>
+        <span class="c-name">${frag.name}</span>
+        <span class="c-body">${frag.text||''}</span>
+        ${frag.combo?`<span class="c-combo">⚡ ${frag.combo}</span>`:''}
+        <span class="c-tag tag-fragment">${TI[frag.t]||''} ${(frag.t||'').toUpperCase()}</span>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--dim);margin-top:4px">Starter: 8× Basic Shard · 2× Pulse Strike · 1× ${frag.name}</div>
+  `;
+  if(factionModalMode==='pick')
+    document.getElementById('faction-confirm').style.background=fi.color;
+}
+function confirmFaction(){
+  myFaction=selectedFaction;factionConfirmed=true;
+  document.getElementById('faction-confirm').style.display='none';
+  if(MODE==='sp'){
+    const opts=FACTIONS.filter(f=>f!==myFaction);
+    peerFaction=opts[Math.floor(Math.random()*opts.length)];
+    document.getElementById('faction-overlay').style.display='none';
+    document.getElementById('faction-overlay')._onConfirm(myFaction,peerFaction);
+  }else{
+    saveAll();
+    const msg={type:'faction',faction:myFaction};
+    net.send(msg);startFactionRetry(msg);
+    document.getElementById('faction-waiting').style.display='block';
+    if(factionPeerConfirmed)tryStartMP();
+  }
+}
+function tryStartMP(){
+  if(!factionConfirmed||!factionPeerConfirmed)return;
+  stopFactionRetry();
+  document.getElementById('faction-overlay').style.display='none';
+  document.getElementById('faction-overlay')._onConfirm(myFaction,peerFaction);
+}
+
+// ── SP / MP INIT ──────────────────────────────────────────────────────────────
+function startSP(){
+  MODE='sp';document.getElementById('mode-overlay').style.display='none';
+  showFactionModal((pf,af)=>{initGame(pf,af);updateFactionBadges();});
+}
+function startMP(){
+  MODE='mp';document.getElementById('mode-overlay').style.display='none';
+  document.getElementById('opp-label').textContent='🕹️ Opponent';
+  document.getElementById('ai-hand-ct').style.display='none';
+  initEmptyGame();
+  net=new WSSNet({
+    onReady(id){myId=id;},
+    onPaired(id,peer){
+      myId=id;peerId=peer;
+      const isHost=myId<peerId;
+      log(`🌐 Paired! You are ${isHost?'host':'guest'}.`);
+      // Fresh pairing always resets faction state — new game, new choices
+      myFaction=null;peerFaction=null;
+      factionConfirmed=false;factionPeerConfirmed=false;
+      stopFactionRetry();
+      sessionStorage.removeItem(SS_KEY);
+      showFactionModal((pf,af)=>{
+        if(isHost)initHostGame(pf,af);
+        else{setActiveId(peerId);myTurn=false;setWaiting(true,'Waiting for host to deal…');}
+        updateFactionBadges();
+      });
+    },
+    onReconnected(peer){
+      peerId=peer;log('🔄 Reconnected.');
+      const hadSave=loadAll();
+      const isHost=myId<peerId;
+
+      // Case 1: no save or faction never confirmed — show modal fresh
+      if(!hadSave||!factionConfirmed){
+        myFaction=null;peerFaction=null;
+        factionConfirmed=false;factionPeerConfirmed=false;
+        stopFactionRetry();
+        showFactionModal((pf,af)=>{
+          if(isHost)initHostGame(pf,af);
+          else{setActiveId(peerId);myTurn=false;setWaiting(true,'Waiting for host to deal…');}
+          updateFactionBadges();
+        });
+        return;
+      }
+
+      // Case 2: I confirmed but peer hasn't yet — show modal in waiting state
+      if(factionConfirmed&&!factionPeerConfirmed){
+        // Re-show modal, but already past confirm — just show waiting UI
+        document.getElementById('faction-modal-title').textContent='⚗️ CHOOSE FACTION';
+        document.getElementById('faction-modal-sub').textContent='Your faction defines your starting fragment and identity bonus';
+        document.getElementById('faction-confirm').style.display='none';
+        document.getElementById('faction-close-btn').style.display='none';
+        document.getElementById('faction-waiting').style.display='block';
+        document.getElementById('faction-waiting').textContent='⏳ Waiting for opponent to choose…';
+        buildFactionTabs(false);selectFactionTab(myFaction);
+        document.getElementById('faction-overlay').style.display='flex';
+        // Resend our faction msg so peer can ack
+        if(factionPendingMsg){factionRetryCt=0;net.send(factionPendingMsg);}
+        else{
+          const msg={type:'faction',faction:myFaction};
+          net.send(msg);startFactionRetry(msg);
+        }
+        return;
+      }
+
+      // Case 3: Both factions confirmed — resume game
+      myTurn=amIActive();G.phase=myTurn?'player':'ai';
+      if(myTurn){setWaiting(false);if(pendingMsg){retryCt=0;net.send(pendingMsg);}}
+      else setWaiting(true,'Waiting for opponent…');
+      updateFactionBadges();render();
+    },
+    onPeerDisconnected(){log('⚠️ Opponent disconnected.');setWaiting(true,'Opponent disconnected…');},
+    onMessage(data){handleMsg(data);}
+  });
+  net.mountPairModal();net.mountServerModal();
+}
+
+// ── MESSAGE HANDLER ───────────────────────────────────────────────────────────
+function handleMsg(data){
+  if(data.type==='faction'){
+    net.send({type:'faction_ack'});
+    if(!factionPeerConfirmed){
+      peerFaction=data.faction;factionPeerConfirmed=true;saveAll();
+      log(`🎭 Opponent chose ${FACTION_INFO[peerFaction].name}.`);tryStartMP();
+    }
+    return;
+  }
+  if(data.type==='faction_ack'){stopFactionRetry();return;}
+  if(data.type==='ack'){
+    if(data.seq===pendingMsg?.seq){stopRetry();log(`✓ Turn ${data.seq} delivered.`);}
+    return;
+  }
+  if(data.type!=='state')return;
+  net.send({type:'ack',seq:data.seq});
+  if(data.seq<=lastAppliedSeq)return;
+  lastAppliedSeq=data.seq;
+  G.turn=data.turn;G.market=hydList(data.market);G.mktDeck=hydList(data.mktDeck);
+  G.player=hydP(data.player);G.ai=hydP(data.ai);playedSet=new Set();
+  if(data.seq===0){setActiveId(peerId);myTurn=false;}
+  else{setActiveId(myId);myTurn=true;}
+  G.phase=myTurn?'player':'ai';saveAll();
+  if(myTurn){applyPassives('player');setWaiting(false);document.getElementById('end-btn').disabled=false;log(`── Turn ${G.turn}: Your Turn ──`);}
+  else{setWaiting(true,'Waiting for opponent…');log(`── Turn ${G.turn}: Opponent's Turn ──`);}
+  checkResonance('player');render();
+}
+
+function buildStateMsg(seq){
+  return{type:'state',seq,turn:G.turn,
+    market:G.market.map(c=>c.id),mktDeck:G.mktDeck.map(c=>c.id),
+    player:serP(G.ai),ai:serP(G.player)};
+}
+
+// ── RESOURCES ─────────────────────────────────────────────────────────────────
+function addFoc(S,w,n){S[w].focus+=n;}
+function addD(S,w,n){
+  S[w].disrupt+=n;
+  if(w==='player'&&S[w].faction==='ember'&&!S[w].emberBonusUsed&&S[w].disrupt>=4){
+    S[w].emberBonusUsed=true;S[w].disrupt+=1;log('🔥 Ember Identity: +1 bonus Disruption!');
+  }
+}
+function gainF(S,w,n){
+  if(w==='player'&&S[w].faction==='verdant'&&!S[w].verdantFirstGainUsed&&n>0){
+    S[w].verdantFirstGainUsed=true;n+=1;log('🌿 Verdant Identity: +1 bonus Flux!');
+  }
+  S[w].flux=Math.min(45,S[w].flux+n);
+}
+function loseF(S,w,n){
+  const p=S[w];
+  if(!p.bastionUsed&&p.structs.some(c=>c.id==='bastion_core')){
+    n=Math.max(0,n-1);p.bastionUsed=true;log(`🪨 Bastion Core absorbs 1 for ${w==='player'?'you':'opponent'}!`);
+  }
+  p.flux=Math.max(0,p.flux-n);checkDeath();
+}
+function draw(S,w,n){
+  const p=S[w];let bonus=0;
+  if(w==='player'&&p.faction==='aether'&&!p.aetherFirstDrawUsed&&n>0){
+    p.aetherFirstDrawUsed=true;bonus=1;log('🌪️ Aether Identity: draw +1 bonus card!');
+  }
+  for(let i=0;i<n+bonus;i++){
+    if(!p.deck.length){if(!p.discard.length)return;p.deck=shuffle([...p.discard]);p.discard=[];log(`${w==='player'?'You':'Opponent'} shuffled discard.`);}
+    p.hand.push(p.deck.pop());
+  }
+}
+function applyPassives(w){[...G[w].frags,...G[w].structs].forEach(c=>{if(c.pass)c.pass(G,w);});}
+function applyEOT(w){[...G[w].frags,...G[w].structs].forEach(c=>{if(c.eot)c.eot(G,w);});}
+
+// ── COMBO / ECHO ──────────────────────────────────────────────────────────────
+function execCard(w,card,cb){
+  const p=G[w];
+  const isEcho=card.t==='action'&&!p.echoUsed&&p.frags.some(c=>c.id==='echo_fragment');
+  if(isEcho)p.echoUsed=true;
+  const hasCombo=card.f!=='neutral'&&p.factions.has(card.f)&&card.cx;
+  if(card.f!=='neutral')p.factions.add(card.f);
+  const isComplex=card.text&&(card.text.includes('May')||card.text.includes('Return')||card.text.includes('Scrap'));
+  if(isEcho&&!isComplex){
+    log(`✨ Echo! ${card.name} triggers twice.`);
+    card.play(G,w,null);if(hasCombo)card.cx(G,w);
+    card.play(G,w,cb||done);if(hasCombo)card.cx(G,w);
+  }else{
+    card.play(G,w,cb||done);
+    if(hasCombo){card.cx(G,w);log(`🔗 Combo: ${card.name}!`);}
+  }
+  function done(){render();}
+}
+
+// ── MAY EFFECTS ───────────────────────────────────────────────────────────────
+function mayLoseDraw(S,w,cb){
+  if(w==='ai'){loseF(S,w,1);draw(S,w,1);if(cb)cb();return;}
+  modal('Optional','Lose 1 Flux to draw a card?',[],
+    [{l:'Yes',p:true,fn(){loseF(G,'player',1);draw(G,'player',1);closeM(cb);}},{l:'Skip',fn(){closeM(cb);}}]);
+}
+function scrapFromHandByCard(card){
+  for(let i=0;i<G.player.hand.length;i++){
+    if(G.player.hand[i]===card&&!playedSet.has(i)){
+      G.player.hand.splice(i,1);
+      const np=new Set();playedSet.forEach(p=>{if(p<i)np.add(p);else if(p>i)np.add(p-1);});
+      playedSet=np;return;
+    }
+  }
+}
+function mayScrapHand4D(S,w,cb){
+  if(w==='ai'){if(S.ai.hand.length){const c=S.ai.hand.reduce((a,b)=>a.cost<=b.cost?a:b);S.ai.hand=S.ai.hand.filter(x=>x!==c);addD(S,'ai',2);}if(cb)cb();return;}
+  const cards=handAvail();if(!cards.length){if(cb)cb();return;}
+  modal('Scorch Loop','Scrap from hand → +2 Disruption?',cards,[{l:'Skip',fn(){closeM(cb);}}],c=>{scrapFromHandByCard(c);addD(G,'player',2);closeM(cb);});
+}
+function mayScrapHand(S,w,cb){
+  if(w==='ai'){if(S.ai.hand.length){const c=S.ai.hand.reduce((a,b)=>a.cost<=b.cost?a:b);S.ai.hand=S.ai.hand.filter(x=>x!==c);}if(cb)cb();return;}
+  const cards=handAvail();if(!cards.length){if(cb)cb();return;}
+  modal('Scrap Hand','Scrap a card from your hand?',cards,[{l:'Skip',fn(){closeM(cb);}}],c=>{scrapFromHandByCard(c);closeM(cb);});
+}
+function mayScrapDisc(S,w,cb){
+  if(w==='ai'){if(S.ai.discard.length)S.ai.discard.pop();if(cb)cb();return;}
+  if(!G.player.discard.length){if(cb)cb();return;}
+  modal('Pulse Refinery','Scrap from discard?',G.player.discard,[{l:'Skip',fn(){closeM(cb);}}],c=>{G.player.discard=G.player.discard.filter(x=>x!==c);closeM(cb);});
+}
+function mayScrapHandOrDisc(S,w,cb){
+  if(w==='ai'){
+    if(S.ai.hand.length){const c=S.ai.hand.reduce((a,b)=>a.cost<=b.cost?a:b);S.ai.hand=S.ai.hand.filter(x=>x!==c);}
+    else if(S.ai.discard.length)S.ai.discard.pop();
+    if(cb)cb();return;
+  }
+  const fromHand=handAvail(),fromDiscard=G.player.discard;
+  if(!fromHand.length&&!fromDiscard.length){if(cb)cb();return;}
+  document.getElementById('m-title').textContent='Fragment Extractor';
+  document.getElementById('m-desc').textContent='Scrap a card from hand or discard (optional).';
+  const mc=document.getElementById('m-cards');mc.innerHTML='';
+  if(fromHand.length){
+    const lbl=document.createElement('div');lbl.className='modal-section-lbl';lbl.textContent='— HAND —';mc.appendChild(lbl);
+    fromHand.forEach(c=>{const el=mkCard(c);el.classList.add('modal-card-sel');el.onclick=()=>{scrapFromHandByCard(G.player.hand.find((x,i)=>x.id===c.id&&!playedSet.has(i)));closeM(cb);};mc.appendChild(el);});
+  }
+  if(fromDiscard.length){
+    const lbl=document.createElement('div');lbl.className='modal-section-lbl';lbl.textContent='— DISCARD —';mc.appendChild(lbl);
+    fromDiscard.forEach(c=>{const el=mkCard(c);el.classList.add('modal-card-sel');el.onclick=()=>{G.player.discard=G.player.discard.filter(x=>x!==c);closeM(cb);};mc.appendChild(el);});
+  }
+  const mb=document.getElementById('m-btns');mb.innerHTML='';
+  const skip=document.createElement('button');skip.className='m-btn';skip.textContent='Skip';skip.onclick=()=>closeM(cb);mb.appendChild(skip);
+  document.getElementById('modal-ov').classList.add('show');render();
+}
+function pickFromDiscard(S,w,cb){
+  if(w==='ai'){if(S.ai.discard.length){const c=S.ai.discard.reduce((a,b)=>a.cost>=b.cost?a:b);S.ai.discard=S.ai.discard.filter(x=>x!==c);S.ai.hand.push(c);}if(cb)cb();return;}
+  if(!G.player.discard.length){if(cb)cb();return;}
+  modal('Temporal Glitch','Return a card from discard to hand.',G.player.discard,[],c=>{G.player.discard=G.player.discard.filter(x=>x!==c);G.player.hand.push(c);closeM(cb);});
+}
+function oppDiscardRnd(S,w){
+  const o=opp(w);
+  if(S[o].hand.length){const i=Math.floor(Math.random()*S[o].hand.length);const c=S[o].hand.splice(i,1)[0];S[o].discard.push(c);log(`💨 Phase Collapse: ${o==='ai'?'Opponent':'You'} discarded ${c.name}.`);}
+}
+function handAvail(){return G.player.hand.filter((_,i)=>!playedSet.has(i));}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────────
+function modal(title,desc,cards,btns,onCard){
+  document.getElementById('m-title').textContent=title;
+  document.getElementById('m-desc').textContent=desc;
+  const mc=document.getElementById('m-cards');mc.innerHTML='';
+  cards.forEach(c=>{const el=mkCard(c);el.classList.add('modal-card-sel');el.onclick=()=>{if(onCard)onCard(c);};mc.appendChild(el);});
+  const mb=document.getElementById('m-btns');mb.innerHTML='';
+  btns.forEach(b=>{const btn=document.createElement('button');btn.className='m-btn'+(b.p?' primary':'');btn.textContent=b.l;btn.onclick=b.fn;mb.appendChild(btn);});
+  document.getElementById('modal-ov').classList.add('show');render();
+}
+function closeM(cb){document.getElementById('modal-ov').classList.remove('show');render();if(cb)cb();}
+
+// ── CARD PREVIEW (long press) ─────────────────────────────────────────────────
+let pressTimer=null;
+function openPreview(card){
+  const wrap=document.getElementById('preview-card-wrap');
+  // Border color by type
+  const borderColor=card.t==='fragment'?'var(--aether)':card.t==='structure'?'var(--stone)':card.common?'var(--neutral)':'var(--border)';
+  wrap.style.borderColor=borderColor;
+  document.getElementById('pv-faction').className=`c-faction ${FC[card.f]||'fc-neutral'}`;
+  document.getElementById('pv-faction').textContent=`${FI[card.f]||''} ${(card.f||'').toUpperCase()}`;
+  document.getElementById('pv-name').textContent=card.name;
+  const costEl=document.getElementById('pv-cost');
+  if(card.cost>0){costEl.textContent=card.cost;costEl.style.display='';}else costEl.style.display='none';
+  document.getElementById('pv-body').textContent=card.text||'';
+  const comboEl=document.getElementById('pv-combo');
+  if(card.combo){comboEl.textContent=`⚡ Combo: ${card.combo}`;comboEl.style.display='';}else comboEl.style.display='none';
+  const tagEl=document.getElementById('pv-tag');
+  tagEl.className=`c-tag ${card.t==='fragment'?'tag-fragment':card.t==='structure'?'tag-structure':card.common?'tag-common':'tag-action'}`;
+  tagEl.textContent=`${TI[card.t]||''} ${(card.t||'').toUpperCase()}${card.common?' · COMMON':''}`;
+  document.getElementById('preview-ov').classList.add('show');
+}
+function closePreview(){document.getElementById('preview-ov').classList.remove('show');}
+
+function addLongPress(el,card){
+  let pt=null;
+  const open=()=>openPreview(card);
+  el.addEventListener('touchstart',()=>{pt=setTimeout(()=>{pt=null;open();},350);},{passive:true});
+  el.addEventListener('touchend',()=>{if(pt){clearTimeout(pt);pt=null;}});
+  el.addEventListener('touchmove',()=>{if(pt){clearTimeout(pt);pt=null;}});
+  el.addEventListener('mousedown',()=>{pt=setTimeout(()=>{pt=null;open();},350);});
+  el.addEventListener('mouseup',()=>{if(pt){clearTimeout(pt);pt=null;}});
+}
+
+// ── PLAYER ACTIONS ────────────────────────────────────────────────────────────
+function isMyActivePhase(){
+  if(G.phase!=='player')return false;
+  if(MODE==='mp'&&!myTurn)return false;
+  return true;
+}
+function playerPlay(i){
+  if(!isMyActivePhase())return;
+  if(playedSet.has(i))return;
+  if(G.player.boughtThisTurn>0){log('❌ Already bought — action phase locked!');return;}
+  if(G.player.playedThisTurn>=5){log('❌ Max 5 cards per turn!');return;}
+  const card=G.player.hand[i];if(!card)return;
+  playedSet.add(i);G.player.playedThisTurn++;
+  log(`▶ You play ${card.name}. (${G.player.playedThisTurn}/5)`);
+  if(card.t==='fragment'){G.player.frags.push(card);if(card.pass)card.pass(G,'player');}
+  else if(card.t==='structure'){G.player.structs.push(card);if(card.pass)card.pass(G,'player');}
+  execCard('player',card,()=>{saveAll();render();});
+  saveAll();render();
+}
+function playerBuy(i){
+  if(!isMyActivePhase())return;
+  const card=G.market[i];if(!card)return;
+  if(G.player.boughtThisTurn>=2){log('❌ Max 2 buys per turn!');return;}
+  if(card.common&&G.player.commonBoughtThisTurn>=1){log('❌ Max 1 common card per turn!');return;}
+  let cost=card.cost;
+  if(G.player.faction==='stone'&&!G.player.stoneFirstBuyUsed){cost=Math.max(0,cost-1);G.player.stoneFirstBuyUsed=true;log('🪨 Stone Identity: first buy −1 Focus!');}
+  if(G.player.boughtThisTurn===1)cost+=1;
+  if(G.player.focus<cost){log(`❌ Not enough Focus! (need ${cost})`);return;}
+  G.player.focus-=cost;G.player.discard.push({...card});G.market.splice(i,1);refill();
+  G.player.boughtThisTurn++;if(card.common)G.player.commonBoughtThisTurn++;
+  log(`🛒 Bought ${card.name} for ${cost}. (${G.player.boughtThisTurn}/2)`);
+  saveAll();render();
+}
+function endPlayerTurn(){
+  if(!isMyActivePhase())return;
+  if(document.getElementById('modal-ov').classList.contains('show'))return;
+  applyEOT('player');
+  const dmg=G.player.disrupt;
+  if(dmg>0){log(`⚔️ You attack for ${dmg}! Opp: ${G.ai.flux}→${Math.max(0,G.ai.flux-dmg)}`);loseF(G,'ai',dmg);}
+  else log('⚔️ End turn, 0 Disruption.');
+  if(checkDeath())return;
+  // Only discard action cards — fragments/structures that were played are already in frags/structs
+  G.player.hand.forEach((c,i)=>{
+    if(!c)return;
+    if(playedSet.has(i)&&(c.t==='fragment'||c.t==='structure'))return;
+    G.player.discard.push(c);
+  });
+  G.player.hand=[];playedSet=new Set();
+  G.player.focus=0;G.player.disrupt=0;G.player.factions=new Set();
+  G.player.echoUsed=false;G.player.bastionUsed=false;
+  G.player.boughtThisTurn=0;G.player.playedThisTurn=0;G.player.commonBoughtThisTurn=0;
+  G.player.emberBonusUsed=false;G.player.verdantFirstGainUsed=false;
+  G.player.aetherFirstDrawUsed=false;G.player.stoneFirstBuyUsed=false;
+  draw(G,'player',5);G.turn++;G.phase='ai';
+  document.getElementById('end-btn').disabled=true;
+  if(MODE==='sp'){saveAll();render();setTimeout(doAI,400);}
+  else{
+    setActiveId(peerId);myTurn=false;saveAll();
+    const msg=buildStateMsg(G.turn);net.send(msg);startRetry(msg);
+    setWaiting(true,'Waiting for opponent…');render();
+  }
+}
+
+// ── SERIALIZATION ─────────────────────────────────────────────────────────────
+function serP(p){
+  return{flux:p.flux,focus:p.focus,disrupt:p.disrupt,faction:p.faction,
+    deck:p.deck.map(c=>c.id),hand:p.hand.map(c=>c.id),discard:p.discard.map(c=>c.id),
+    frags:p.frags.map(c=>c.id),structs:p.structs.map(c=>c.id),
+    playedThisTurn:p.playedThisTurn||0,boughtThisTurn:p.boughtThisTurn||0,
+    commonBoughtThisTurn:p.commonBoughtThisTurn||0,factions:[...p.factions],
+    echoUsed:p.echoUsed||false,bastionUsed:p.bastionUsed||false,
+    emberBonusUsed:p.emberBonusUsed||false,verdantFirstGainUsed:p.verdantFirstGainUsed||false,
+    aetherFirstDrawUsed:p.aetherFirstDrawUsed||false,stoneFirstBuyUsed:p.stoneFirstBuyUsed||false};
+}
+function hydCard(id){const d=CARD_MAP[id];if(!d){console.warn('Unknown:',id);return null;}return{...d};}
+function hydList(ids){return ids.map(hydCard).filter(Boolean);}
+function hydP(p){
+  return{flux:p.flux,focus:p.focus,disrupt:p.disrupt,faction:p.faction||'ember',
+    deck:hydList(p.deck),hand:hydList(p.hand),discard:hydList(p.discard),
+    frags:hydList(p.frags),structs:hydList(p.structs),factions:new Set(p.factions||[]),
+    echoUsed:p.echoUsed||false,bastionUsed:p.bastionUsed||false,
+    boughtThisTurn:p.boughtThisTurn||0,playedThisTurn:p.playedThisTurn||0,
+    commonBoughtThisTurn:p.commonBoughtThisTurn||0,
+    emberBonusUsed:p.emberBonusUsed||false,verdantFirstGainUsed:p.verdantFirstGainUsed||false,
+    aetherFirstDrawUsed:p.aetherFirstDrawUsed||false,stoneFirstBuyUsed:p.stoneFirstBuyUsed||false};
+}
+
+// ── AI TURN ───────────────────────────────────────────────────────────────────
+function doAI(){
+  if(MODE==='mp')return;
+  const ai=G.ai;
+  ai.focus=0;ai.disrupt=0;ai.factions=new Set();ai.echoUsed=false;ai.bastionUsed=false;
+  ai.commonBoughtThisTurn=0;ai.emberBonusUsed=false;ai.verdantFirstGainUsed=false;
+  ai.aetherFirstDrawUsed=false;ai.stoneFirstBuyUsed=false;
+  log('── AI TURN ──');applyPassives('ai');
+  const hand=[...ai.hand];ai.hand=[];
+  hand.forEach(card=>{
+    log(`🤖 AI plays ${card.name}.`);
+    if(card.t==='fragment'){ai.frags.push(card);if(card.pass)card.pass(G,'ai');}
+    else if(card.t==='structure'){ai.structs.push(card);if(card.pass)card.pass(G,'ai');}
+    execCard('ai',card,null);
+  });
+  let bought=0,keep=true;
+  while(keep&&bought<2){
+    keep=false;
+    const picks=G.market.filter(c=>{
+      if(c.common&&ai.commonBoughtThisTurn>=1)return false;
+      let cost=c.cost;
+      if(ai.faction==='stone'&&!ai.stoneFirstBuyUsed)cost=Math.max(0,cost-1);
+      if(bought===1)cost+=1;
+      return cost<=ai.focus;
+    }).sort((a,b)=>{
+      const sc=c=>(c.text.includes('Disruption')?3:0)+(c.text.includes('Flux')?1:0)+c.cost;
+      return sc(b)-sc(a);
+    });
+    if(picks.length){
+      const pick=picks[0];const idx=G.market.indexOf(pick);
+      let cost=pick.cost;
+      if(ai.faction==='stone'&&!ai.stoneFirstBuyUsed){cost=Math.max(0,cost-1);ai.stoneFirstBuyUsed=true;}
+      if(bought===1)cost+=1;
+      ai.focus-=cost;ai.discard.push({...pick});G.market.splice(idx,1);refill();
+      if(pick.common)ai.commonBoughtThisTurn++;
+      bought++;log(`🤖 AI buys ${pick.name}.`);keep=true;
+    }
+  }
+  applyEOT('ai');
+  const dmg=ai.disrupt;
+  if(dmg>0){log(`💥 AI attacks for ${dmg}! You: ${G.player.flux}→${Math.max(0,G.player.flux-dmg)}`);loseF(G,'player',dmg);}
+  else log('🤖 AI ends with 0 Disruption.');
+  if(checkDeath())return;
+  ai.hand.forEach(c=>ai.discard.push(c));ai.hand=[];ai.focus=0;ai.disrupt=0;ai.factions=new Set();
+  draw(G,'ai',5);
+  G.phase='player';G.player.playedThisTurn=0;G.player.boughtThisTurn=0;G.player.commonBoughtThisTurn=0;
+  G.player.emberBonusUsed=false;G.player.verdantFirstGainUsed=false;
+  G.player.aetherFirstDrawUsed=false;G.player.stoneFirstBuyUsed=false;
+  document.getElementById('end-btn').disabled=false;
+  checkResonance('player');applyPassives('player');log('── YOUR TURN ──');render();
+}
+
+// ── WIN CONDITIONS ────────────────────────────────────────────────────────────
+function checkDeath(){
+  if(G.ai.flux<=0){endGame('player','collapse');return true;}
+  if(G.player.flux<=0){endGame('ai','collapse');return true;}
+  return false;
+}
+function checkResonance(w){
+  const p=G[w];if(p.flux<10||p.frags.length<10)return;
+  const real=p.frags.filter(c=>c.id!=='unstable_core');
+  const wild=p.frags.some(c=>c.id==='unstable_core');
+  const facs=new Set(real.map(c=>c.f));
+  if(facs.size+(wild?1:0)>=3)endGame(w,'resonance');
+}
+function endGame(winner,type){
+  G.phase='over';const win=winner==='player';
+  document.getElementById('go-title').textContent=win?'🎉 YOU WIN!':'💀 YOU LOSE';
+  document.getElementById('go-sub').textContent=type==='collapse'
+    ?(win?'You reduced your opponent\'s Flux to zero!':'Your Flux was reduced to zero.')
+    :(win?'Resonance Victory!':'Opponent achieved Resonance Victory.');
+  document.getElementById('go').classList.add('show');
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────────
+function updateFactionBadges(){
+  if(!G)return;
+  const pf=G.player.faction,af=G.ai.faction;
+  const pb=document.getElementById('player-faction-badge');
+  pb.textContent=FACTION_INFO[pf]?.name||'';
+  pb.style.color=FCOLOR[pf]||'#fff';pb.style.borderColor=FCOLOR[pf]||'var(--border)';pb.style.display='inline-block';
+  const ob=document.getElementById('opp-faction-badge');
+  ob.textContent=FACTION_INFO[af]?.name||'';
+  ob.style.color=FCOLOR[af]||'#fff';ob.style.borderColor=FCOLOR[af]||'var(--border)';ob.style.display='inline-block';
+}
+function setWaiting(show,msg=''){
+  document.getElementById('waiting-strip').classList.toggle('show',show);
+  if(msg)document.getElementById('waiting-sub').textContent=msg;
+  document.getElementById('end-btn').disabled=show||!myTurn;
+}
+function log(msg){
+  document.getElementById('live-log').textContent=msg;
+  const ll=document.getElementById('log-list');
+  const d=document.createElement('div');d.textContent=msg;ll.appendChild(d);ll.scrollTop=ll.scrollHeight;
+}
+function toggleLog(){document.getElementById('log-drawer').classList.toggle('open');}
+function toggleFS(){
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
+  if(isIOS){alert('Tap Share → "Add to Home Screen" for fullscreen.');return;}
+  const e=document.documentElement;
+  if(!document.fullscreenElement)e.requestFullscreen?.();else document.exitFullscreen?.();
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function mkCard(card){
+  if(!card||!card.name)return document.createElement('div');
+  const d=document.createElement('div');d.className='card';
+  d.innerHTML=`
+    <span class="c-faction ${FC[card.f]||'fc-neutral'}">${FI[card.f]||''} ${(card.f||'').toUpperCase()}</span>
+    <span class="c-name">${card.name}</span>
+    ${(card.cost||0)>0?`<span class="c-cost">${card.cost}</span>`:''}
+    <span class="c-body">${card.text||''}</span>
+    ${card.combo?`<span class="c-combo">⚡ ${card.combo}</span>`:''}
+    <span class="c-tag ${card.t==='fragment'?'tag-fragment':card.t==='structure'?'tag-structure':card.common?'tag-common':'tag-action'}">${TI[card.t]||''} ${(card.t||'').toUpperCase()}${card.common?' · COMMON':''}</span>
+  `;
+  addLongPress(d,card);
+  return d;
+}
+function renderHand(){
+  const row=document.getElementById('hand-row');row.innerHTML='';
+  const active=isMyActivePhase();
+  if(!G.player.hand.length){row.innerHTML='<span style="color:var(--dim);font-size:11px;padding:8px">No cards.</span>';return;}
+  G.player.hand.forEach((card,i)=>{
+    if(!card)return;
+    const el=mkCard(card);
+    if(playedSet.has(i)){el.classList.add('played');}
+    else if(G.player.boughtThisTurn>0||G.player.playedThisTurn>=5||!active){el.classList.add('locked');}
+    else{
+      el.classList.add('tappable');
+      if(card.t==='fragment')el.classList.add('fragment-type');
+      if(card.t==='structure')el.classList.add('structure-type');
+      el.onclick=()=>playerPlay(i);
+    }
+    row.appendChild(el);
+  });
+}
+function renderMarket(){
+  const row=document.getElementById('market-row');row.innerHTML='';
+  const active=isMyActivePhase();
+  if(!G.market.length){row.innerHTML='<span style="color:var(--dim);font-size:11px;padding:8px">Market empty.</span>';return;}
+  G.market.forEach((card,i)=>{
+    if(!card)return;
+    const el=mkCard(card);
+    const commonBlocked=card.common&&G.player.commonBoughtThisTurn>=1;
+    let cost=card.cost;
+    if(G.player.faction==='stone'&&!G.player.stoneFirstBuyUsed)cost=Math.max(0,cost-1);
+    if(G.player.boughtThisTurn===1)cost+=1;
+    const can=active&&G.player.focus>=cost&&G.player.boughtThisTurn<2&&!commonBlocked;
+    el.classList.add(can?'buyable':'no-focus');
+    if(card.common)el.classList.add('common-type');
+    // Always allow long press regardless of buyable state
+    if(can)el.onclick=()=>playerBuy(i);
+    row.appendChild(el);
+  });
+  document.getElementById('mkt-left').textContent=`(${G.mktDeck.length} left)`;
+}
+function renderPersistent(w){
+  const el=document.getElementById(w+'-persistent');el.innerHTML='';
+  const cards=[...G[w].frags,...G[w].structs];
+  if(!cards.length){if(w==='player')el.innerHTML='<span style="color:var(--dim);font-size:10px">No fragments or structures yet.</span>';return;}
+  cards.forEach(card=>{
+    if(!card)return;
+    if(w==='player'){
+      const d=mkCard(card);d.style.borderColor=card.t==='fragment'?'#7c6fff':'#c09050';el.appendChild(d);
+    }else{
+      const d=document.createElement('div');d.className='mini-card';
+      d.innerHTML=`<span class="${FC[card.f]||'fc-neutral'}">${FI[card.f]||''}</span><span>${card.name}</span>`;
+      addLongPress(d,card);el.appendChild(d);
+    }
+  });
+}
+function render(){
+  if(!G)return;
+  updateFactionBadges();
+  const pf=G.player.flux,af=G.ai.flux;
+  document.getElementById('p-flux').textContent=pf;
+  document.getElementById('p-flux-fill').style.width=(pf/45*100)+'%';
+  document.getElementById('ai-flux-num').textContent=af;
+  document.getElementById('ai-flux-fill').style.width=(af/45*100)+'%';
+  document.getElementById('p-focus').textContent=G.player.focus;
+  document.getElementById('p-disrupt').textContent=G.player.disrupt;
+  document.getElementById('p-deck-ct').textContent=`🂠 Deck: ${G.player.deck.length}`;
+  document.getElementById('p-disc-ct').textContent=`♻ Discard: ${G.player.discard.length}`;
+  document.getElementById('ai-deck-ct').textContent=`🂠 ${G.ai.deck.length}`;
+  document.getElementById('ai-disc-ct').textContent=`♻ ${G.ai.discard.length}`;
+  if(MODE==='sp')document.getElementById('ai-hand-ct').textContent=`🤚 ${G.ai.hand.length}`;
+  const badge=MODE==='mp'?(myTurn?'Your Turn':'Opponent\'s Turn'):(G.phase==='player'?'Your Turn':'AI Turn');
+  document.getElementById('turn-badge').textContent=`Turn ${G.turn} · ${badge}`;
+  document.getElementById('end-btn').disabled=!isMyActivePhase();
+  const played=playedSet.size,total=G.player.hand.length;
+  document.getElementById('hand-count').textContent=total?`(${played}/${total} played)`:'';
+  const frags=G.player.frags.length;
+  document.getElementById('frag-count').textContent=frags?`(${frags}/10 frags)`:'';
+  renderHand();renderMarket();renderPersistent('player');renderPersistent('ai');
+}
+</script>
+</body>
+</html>
