@@ -7,319 +7,643 @@
 <title>Wine Trip</title>
 <style>
   :root{
-    --bg:#100b0e;
-    --card:#171015;
-    --card-edge:#241a20;
-    --ink:#efe7e3;
-    --muted:#8a7f86;
-    --green:#38e08c;
-    --cyan:#3fd2e6;
-    --gold:#ffcf3f;
-    --gold-dim:#4a4048;
-    --danger:#e0534f;
-    --field:#0c0709;
+    --bg:#100b0e; --group-bg:#150e13; --group-edge:#251a21;
+    --winery-bg:#1e1620; --winery-edge:#2b2029; --field:#0c0709;
+    --ink:#efe7e3; --muted:#8a7f86;
+    --green:#38e08c; --cyan:#3fd2e6; --gold:#ffcf3f; --gold-dim:#4a4048;
+    --rose:#e77aa0; --danger:#e0534f; --nav-bg:#0d0810;
   }
   *{box-sizing:border-box}
   html,body{margin:0}
   body{
-    background:var(--bg);
-    color:var(--ink);
+    background:var(--bg); color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
-    -webkit-font-smoothing:antialiased;
-    line-height:1.4;
-    padding:max(20px,env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased; line-height:1.4;
+    padding:max(20px,env(safe-area-inset-top)) 16px calc(78px + env(safe-area-inset-bottom));
   }
-  .wrap{max-width:640px;margin:0 auto}
+  .wrap{max-width:660px;margin:0 auto}
 
-  header.top{margin:6px 2px 22px}
-  header.top h1{
-    font-family:Georgia,"Times New Roman",serif;
-    font-weight:600;
-    font-size:1.9rem;
-    letter-spacing:.3px;
-    margin:0;
-  }
-  header.top p{margin:4px 0 0;color:var(--muted);font-size:.85rem}
+  h1.page{font-family:Georgia,"Times New Roman",serif;font-weight:600;
+    font-size:1.7rem;letter-spacing:.3px;margin:6px 2px 4px}
+  .sub{color:var(--muted);font-size:.85rem;margin:0 2px 18px}
 
-  /* Inputs / buttons */
-  .addbar{display:flex;gap:8px;margin-bottom:26px}
   input[type=text]{
-    flex:1;min-width:0;
-    background:var(--field);
-    border:1px solid var(--card-edge);
-    color:var(--ink);
-    font-size:16px; /* prevents iOS zoom */
-    padding:12px 14px;
-    border-radius:12px;
-    outline:none;
+    flex:1;min-width:0;background:var(--field);border:1px solid var(--group-edge);
+    color:var(--ink);font-size:16px;padding:12px 14px;border-radius:12px;outline:none;
     transition:border-color .15s,box-shadow .15s;
   }
   input[type=text]::placeholder{color:#5f555b}
-  input[type=text]:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(56,224,140,.15)}
-  .wine-add input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(63,210,230,.15)}
+  input:focus{border-color:var(--rose);box-shadow:0 0 0 3px rgba(231,122,160,.15)}
+  .add-winery input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(56,224,140,.15)}
+  .add-wine input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(63,210,230,.15)}
 
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
-  .btn{
-    padding:12px 16px;border-radius:12px;font-size:.9rem;font-weight:600;
-    border:1px solid var(--card-edge);background:#1d151b;color:var(--ink);white-space:nowrap;
-    transition:transform .08s,background .15s,border-color .15s;
-  }
+  .btn{padding:12px 16px;border-radius:12px;font-size:.88rem;font-weight:600;white-space:nowrap;
+    border:1px solid var(--group-edge);background:#20161c;color:var(--ink);
+    transition:transform .08s,background .15s,border-color .15s;}
   .btn:active{transform:scale(.96)}
+  .btn-block{width:100%;justify-content:center;display:flex}
+  .btn-rose{border-color:rgba(231,122,160,.5);color:var(--rose)}
   .btn-green{border-color:rgba(56,224,140,.5);color:var(--green)}
   .btn-cyan{border-color:rgba(63,210,230,.45);color:var(--cyan)}
+  .btn-gold{border-color:rgba(255,207,63,.5);color:var(--gold)}
+  .btn-danger{border-color:rgba(224,83,79,.45);color:var(--danger)}
 
-  /* Winery card */
-  .winery{
-    background:var(--card);
-    border:1px solid var(--card-edge);
-    border-radius:18px;
-    padding:16px 16px 14px;
-    margin-bottom:16px;
-  }
-  .winery-head{display:flex;align-items:flex-start;gap:10px}
-  .winery-name{
-    flex:1;min-width:0;
-    font-family:Georgia,"Times New Roman",serif;
-    font-size:1.4rem;line-height:1.2;color:var(--ink);
-    word-break:break-word;
-  }
-  .rule{height:3px;border-radius:3px;margin:8px 0 12px;
-        background:linear-gradient(90deg,var(--green),rgba(56,224,140,.05))}
-  .avg{
-    display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
-    background:rgba(255,207,63,.1);border:1px solid rgba(255,207,63,.25);
-    color:var(--gold);font-size:.82rem;font-weight:700;
-    padding:5px 10px;border-radius:999px;margin-top:3px;
-  }
-  .avg .n{color:var(--muted);font-weight:500}
-  .x{
-    flex-shrink:0;color:var(--muted);font-size:1.25rem;line-height:1;
-    padding:4px 6px;border-radius:8px;margin-top:2px;
-  }
-  .x:hover,.x:active{color:var(--danger)}
+  .addbar{display:flex;gap:8px;margin-bottom:22px}
 
-  /* Wine row */
-  .wine{
-    display:flex;align-items:center;gap:8px;
-    padding:9px 2px;border-top:1px solid #201720;
-  }
+  /* group / winery cards */
+  .group{background:var(--group-bg);border:1px solid var(--group-edge);
+    border-radius:18px;padding:14px 14px 12px;margin-bottom:16px;}
+  .winery{background:var(--winery-bg);border:1px solid var(--winery-edge);
+    border-radius:14px;padding:11px 12px 10px;margin-bottom:10px;}
+  .winery:last-of-type{margin-bottom:2px}
+
+  .head{display:flex;align-items:flex-start;gap:6px}
+  .head-main{flex:1;min-width:0;display:flex;align-items:flex-start;gap:8px;cursor:pointer;
+    padding:2px 0;border-radius:8px}
+  .chev{color:var(--muted);font-size:.85rem;line-height:1.7;flex-shrink:0;width:13px;text-align:center}
+  .group-name{font-family:Georgia,"Times New Roman",serif;font-size:1.32rem;line-height:1.25;
+    color:var(--ink);word-break:break-word}
+  .winery-name{font-family:Georgia,"Times New Roman",serif;font-size:1.14rem;line-height:1.22;
+    color:var(--ink);word-break:break-word}
+  .head-actions{display:flex;gap:1px;flex-shrink:0}
+
+  .rule{height:3px;border-radius:3px;margin:9px 2px 13px}
+  .group .rule{background:linear-gradient(90deg,var(--rose),rgba(231,122,160,.05))}
+  .winery .rule{height:2px;margin:7px 0 8px;background:linear-gradient(90deg,var(--green),rgba(56,224,140,.05))}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
+    background:rgba(255,207,63,.1);border:1px solid rgba(255,207,63,.25);color:var(--gold);
+    font-size:.76rem;font-weight:700;padding:4px 9px;border-radius:999px;margin-top:2px}
+  .badge .n{color:var(--muted);font-weight:500}
+
+  .icon{flex-shrink:0;color:var(--muted);font-size:1.02rem;line-height:1;
+    padding:7px 8px;border-radius:8px}
+  .icon.x{font-size:1.22rem}
+  .icon:hover,.icon:active{color:var(--ink)}
+  .icon.x:hover,.icon.x:active{color:var(--danger)}
+
+  .wine{display:flex;align-items:center;gap:8px;padding:7px 2px;border-top:1px solid #271d27}
   .wine:first-child{border-top:none}
   .wine-name{flex:1;min-width:0;color:var(--cyan);font-weight:500;word-break:break-word}
   .stars{display:flex;flex-shrink:0}
-  .star{
-    font-size:1.55rem;line-height:1;color:var(--gold-dim);
-    padding:4px 3px;transition:transform .08s,color .12s;
-  }
+  .star{font-size:1.5rem;line-height:1;color:var(--gold-dim);padding:4px 3px;
+    transition:transform .08s,color .12s}
   .star.on{color:var(--gold)}
   .star:active{transform:scale(1.25)}
+  .star.ro{pointer-events:none}
 
-  .wine-add{display:flex;gap:8px;margin-top:12px}
-  .wine-add input{padding:10px 12px}
+  .add-winery,.add-wine{display:flex;gap:8px;margin-top:10px}
+  .add-winery input{padding:10px 12px}
+  .add-wine input{padding:9px 12px}
 
-  .empty{color:var(--muted);font-size:.9rem;font-style:italic;padding:6px 2px 2px}
-  .empty-top{
-    text-align:center;color:var(--muted);border:1px dashed var(--card-edge);
-    border-radius:16px;padding:28px 16px;font-size:.95rem;
-  }
+  .empty{color:var(--muted);font-size:.87rem;font-style:italic;padding:4px 2px}
+  .empty-top{text-align:center;color:var(--muted);border:1px dashed var(--group-edge);
+    border-radius:16px;padding:26px 16px;font-size:.95rem}
+
+  /* settings */
+  .card{background:var(--group-bg);border:1px solid var(--group-edge);
+    border-radius:16px;padding:16px;margin-bottom:14px}
+  .card h3{margin:0 0 4px;font-size:.95rem}
+  .card p{margin:0 0 12px;color:var(--muted);font-size:.83rem;line-height:1.5}
+  .stat-row{display:flex;gap:10px}
+  .stat{flex:1;background:var(--field);border:1px solid var(--group-edge);border-radius:12px;
+    padding:12px;text-align:center}
+  .stat .v{font-family:Georgia,serif;font-size:1.5rem;color:var(--ink)}
+  .stat .k{color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
+  .stack{display:flex;flex-direction:column;gap:10px}
+
+  /* bottom nav */
+  #nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;
+    background:var(--nav-bg);border-top:1px solid var(--group-edge);
+    padding-bottom:env(safe-area-inset-bottom)}
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:9px 4px 8px;color:var(--muted);font-size:.68rem;font-weight:600;
+    transition:color .15s}
+  .tab svg{width:24px;height:24px}
+  .tab.active{color:var(--gold)}
+
+  /* rename sheet */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:100;
+    display:flex;align-items:flex-end;justify-content:center;padding:16px}
+  .overlay[hidden]{display:none}
+  @media(min-width:520px){.overlay{align-items:center}}
+  .sheet{background:var(--group-bg);border:1px solid var(--group-edge);border-radius:18px;
+    padding:18px;width:100%;max-width:420px}
+  .sheet-title{font-family:Georgia,serif;font-size:1.1rem;margin-bottom:12px}
+  .sheet-actions{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  :focus-visible{outline:2px solid var(--rose);outline-offset:2px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <h1>Wine Trip</h1>
-    <p>Log a winery, add its pours, tap to rate. Saved on this device.</p>
-  </header>
+<div class="wrap" id="page"></div>
 
-  <div class="addbar">
-    <input type="text" id="wineryInput" placeholder="Winery name" autocomplete="off">
-    <button class="btn btn-green" id="addWineryBtn">Add winery</button>
+<nav id="nav">
+  <button class="tab" data-page="wines">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10l-1 6a4 4 0 0 1-8 0L7 3z"/><path d="M12 15v5"/><path d="M8 20h8"/></svg>
+    <span>Wines</span>
+  </button>
+  <button class="tab" data-page="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <span>Search</span>
+  </button>
+  <button class="tab" data-page="settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h9"/><path d="M17 8h3"/><path d="M4 16h3"/><path d="M11 16h9"/><circle cx="15" cy="8" r="2.2"/><circle cx="7" cy="16" r="2.2"/></svg>
+    <span>Settings</span>
+  </button>
+</nav>
+
+<div class="overlay" id="modal" hidden>
+  <div class="sheet">
+    <div class="sheet-title" id="modalTitle">Rename</div>
+    <input type="text" id="modalInput" autocomplete="off">
+    <div class="sheet-actions">
+      <button class="btn" id="modalCancel">Cancel</button>
+      <button class="btn btn-gold" id="modalSave">Save</button>
+    </div>
   </div>
-
-  <div id="list"></div>
 </div>
+
+<input type="file" id="fileInput" accept="application/json,.json" hidden>
 
 <script>
 "use strict";
 
-const KEY = "wineTrip.v1";
-const listEl = document.getElementById("list");
-const wineryInput = document.getElementById("wineryInput");
+const KEY_V2 = "wineTrip.v2";
+const KEY_V1 = "wineTrip.v1";          // read-only, never written
+const KEY_BACKUP = "wineTrip.v2.backup";
 
-let data = load();
-const drafts = {};            // wineryId -> draft wine name
-let newWineryDraft = "";
-let focusWineInput = null;    // wineryId to focus after render
+const pageEl = document.getElementById("page");
+const nav = document.getElementById("nav");
+const fileInput = document.getElementById("fileInput");
+const modal = document.getElementById("modal");
+const modalTitle = document.getElementById("modalTitle");
+const modalInput = document.getElementById("modalInput");
 
-function load(){
-  try{
-    const raw = localStorage.getItem(KEY);
-    if(!raw) return { wineries: [] };
-    const parsed = JSON.parse(raw);
-    return parsed && Array.isArray(parsed.wineries) ? parsed : { wineries: [] };
-  }catch(e){ return { wineries: [] }; }
-}
-function save(){
-  try{ localStorage.setItem(KEY, JSON.stringify(data)); }
-  catch(e){ /* storage full or blocked; app still works this session */ }
-}
+let currentPage = "wines";
+let query = "";
+let groupDraft = "";
+const wineryDrafts = {};   // groupId  -> draft winery name
+const wineDrafts = {};     // wineryId -> draft wine name
+let focusAddWinery = null; // groupId
+let focusAddWine = null;   // wineryId
+let modalPending = null;   // {kind, id}
+let searchInput = null;    // persistent element
+let searchResultsEl = null;
+
+/* ---------- storage + sanitizing ---------- */
 function uid(){
   return (crypto.randomUUID && crypto.randomUUID()) ||
          (Date.now().toString(36) + Math.random().toString(36).slice(2));
 }
-function avgOf(w){
-  const rated = w.wines.filter(x => x.stars > 0);
-  if(!rated.length) return null;
-  return rated.reduce((s,x)=>s+x.stars,0) / rated.length;
+function readJSON(key){
+  try{ const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
 }
-function el(tag, cls, text){
-  const n = document.createElement(tag);
-  if(cls) n.className = cls;
-  if(text != null) n.textContent = text;
-  return n;
+function clampStars(n){ n=parseInt(n,10); if(isNaN(n)||n<0) return 0; if(n>5) return 5; return n; }
+function sanitizeWine(x){
+  if(!x||typeof x!=="object") return null;
+  const name=String(x.name==null?"":x.name).trim()||"Untitled wine";
+  return { id:x.id||uid(), name, stars:clampStars(x.stars) };
 }
+function sanitizeWinery(x){
+  if(!x||typeof x!=="object") return null;
+  const name=String(x.name==null?"":x.name).trim()||"Untitled winery";
+  const wines=Array.isArray(x.wines)?x.wines.map(sanitizeWine).filter(Boolean):[];
+  return { id:x.id||uid(), name, collapsed:!!x.collapsed, wines };
+}
+function sanitizeGroup(x){
+  if(!x||typeof x!=="object") return null;
+  const name=String(x.name==null?"":x.name).trim()||"Untitled group";
+  const wineries=Array.isArray(x.wineries)?x.wineries.map(sanitizeWinery).filter(Boolean):[];
+  return { id:x.id||uid(), name, collapsed:!!x.collapsed, wineries };
+}
+function sanitize(obj, wrapName){
+  if(!obj||typeof obj!=="object") return null;
+  if(Array.isArray(obj.groups))
+    return { version:2, groups:obj.groups.map(sanitizeGroup).filter(Boolean) };
+  if(Array.isArray(obj.wineries)){
+    const wineries=obj.wineries.map(sanitizeWinery).filter(Boolean);
+    return { version:2, groups:[{ id:uid(), name:wrapName||"My wines", collapsed:false, wineries }] };
+  }
+  return null;
+}
+function load(){
+  const v2=readJSON(KEY_V2); if(v2){ const s=sanitize(v2); if(s) return s; }
+  const v1=readJSON(KEY_V1); if(v1){ const s=sanitize(v1,"My wines"); if(s) return s; }
+  return { version:2, groups:[] };
+}
+function save(){ try{ localStorage.setItem(KEY_V2, JSON.stringify(data)); }catch(e){} }
 
-/* ---- actions ---- */
-function addWinery(){
-  const name = wineryInput.value.trim();
-  if(!name) return;
-  const id = uid();
-  data.wineries.unshift({ id, name, wines: [] });
-  wineryInput.value = "";
-  newWineryDraft = "";
-  save();
-  focusWineInput = id;
-  render();
+let data = load();
+save(); // persist migration on first run (v1 untouched)
+
+/* ---------- lookups + math ---------- */
+function findGroup(id){ return data.groups.find(g=>g.id===id); }
+function findWinery(id){
+  for(const g of data.groups){ const w=g.wineries.find(x=>x.id===id); if(w) return {g,w}; }
+  return null;
 }
-function deleteWinery(id){
-  const w = data.wineries.find(x=>x.id===id);
-  const has = w && w.wines.length;
-  if(has && !confirm(`Delete "${w.name}" and its ${w.wines.length} wine(s)?`)) return;
-  data.wineries = data.wineries.filter(x=>x.id!==id);
-  delete drafts[id];
+function wineryAvg(w){
+  const r=w.wines.filter(x=>x.stars>0);
+  return r.length ? r.reduce((s,x)=>s+x.stars,0)/r.length : null;
+}
+function groupAvg(g){
+  let sum=0,c=0;
+  g.wineries.forEach(w=>w.wines.forEach(x=>{ if(x.stars>0){ sum+=x.stars; c++; } }));
+  return c ? sum/c : null;
+}
+function counts(d){
+  let gg=d.groups.length,ww=0,wines=0;
+  d.groups.forEach(g=>{ ww+=g.wineries.length; g.wineries.forEach(w=>wines+=w.wines.length); });
+  return { g:gg, w:ww, wines };
+}
+function el(tag,cls,text){ const n=document.createElement(tag);
+  if(cls)n.className=cls; if(text!=null)n.textContent=text; return n; }
+function starGlyph(){ return "\u2605"; }
+
+/* ---------- mutations ---------- */
+function addGroup(inp){
+  const name=inp.value.trim(); if(!name) return;
+  const id=uid();
+  data.groups.unshift({ id, name, collapsed:false, wineries:[] });
+  inp.value=""; groupDraft="";
+  save(); focusAddWinery=id; render();
+}
+function deleteGroup(id){
+  const g=findGroup(id); if(!g) return;
+  const n=g.wineries.length;
+  const msg = n ? `Delete group "${g.name}" and its ${n} winery(ies)?` : `Delete group "${g.name}"?`;
+  if(!confirm(msg)) return;
+  data.groups=data.groups.filter(x=>x.id!==id); delete wineryDrafts[id];
   save(); render();
 }
+function toggleGroup(id){ const g=findGroup(id); if(!g) return; g.collapsed=!g.collapsed; save(); render(); }
+
+function addWinery(groupId){
+  const name=(wineryDrafts[groupId]||"").trim(); if(!name) return;
+  const g=findGroup(groupId); if(!g) return;
+  const id=uid();
+  g.wineries.unshift({ id, name, collapsed:false, wines:[] });
+  wineryDrafts[groupId]="";
+  save(); focusAddWine=id; render();
+}
+function deleteWinery(id){
+  const f=findWinery(id); if(!f) return;
+  const n=f.w.wines.length;
+  const msg = n ? `Delete "${f.w.name}" and its ${n} wine(s)?` : `Delete winery "${f.w.name}"?`;
+  if(!confirm(msg)) return;
+  f.g.wineries=f.g.wineries.filter(x=>x.id!==id); delete wineDrafts[id];
+  save(); render();
+}
+function toggleWinery(id){ const f=findWinery(id); if(!f) return; f.w.collapsed=!f.w.collapsed; save(); render(); }
+
 function addWine(wineryId){
-  const name = (drafts[wineryId] || "").trim();
-  if(!name) return;
-  const w = data.wineries.find(x=>x.id===wineryId);
-  if(!w) return;
-  w.wines.push({ id: uid(), name, stars: 0 });
-  drafts[wineryId] = "";
-  save();
-  focusWineInput = wineryId;
-  render();
+  const name=(wineDrafts[wineryId]||"").trim(); if(!name) return;
+  const f=findWinery(wineryId); if(!f) return;
+  f.w.wines.push({ id:uid(), name, stars:0 });
+  wineDrafts[wineryId]="";
+  save(); focusAddWine=wineryId; render();
 }
 function deleteWine(wineryId, wineId){
-  const w = data.wineries.find(x=>x.id===wineryId);
-  if(!w) return;
-  w.wines = w.wines.filter(x=>x.id!==wineId);
+  const f=findWinery(wineryId); if(!f) return;
+  const wine=f.w.wines.find(x=>x.id===wineId);
+  if(wine && !confirm(`Delete wine "${wine.name}"?`)) return;
+  f.w.wines=f.w.wines.filter(x=>x.id!==wineId);
   save(); render();
 }
 function rate(wineryId, wineId, value){
-  const w = data.wineries.find(x=>x.id===wineryId);
-  const wine = w && w.wines.find(x=>x.id===wineId);
-  if(!wine) return;
-  wine.stars = (wine.stars === value) ? 0 : value; // tap same star to un-rate
-  save(); render();
+  const f=findWinery(wineryId); if(!f) return;
+  const wine=f.w.wines.find(x=>x.id===wineId); if(!wine) return;
+  wine.stars = (wine.stars===value) ? 0 : value;
+  save();
+  if(currentPage==="search" && searchResultsEl) renderSearchResults();
+  else render();
 }
 
-/* ---- render ---- */
-function render(){
-  wineryInput.value = newWineryDraft;
-  listEl.innerHTML = "";
+/* ---------- rename sheet ---------- */
+function openRename(kind, id){
+  let cur="";
+  if(kind==="group"){ const g=findGroup(id); if(!g) return; cur=g.name; }
+  else{ const f=findWinery(id); if(!f) return; cur=f.w.name; }
+  modalPending={ kind, id };
+  modalTitle.textContent = kind==="group" ? "Rename group" : "Rename winery";
+  modalInput.value=cur;
+  modal.hidden=false;
+  setTimeout(()=>{ modalInput.focus(); modalInput.select(); }, 30);
+}
+function closeRename(){ modal.hidden=true; modalPending=null; }
+function saveRename(){
+  if(!modalPending) return closeRename();
+  const t=modalInput.value.trim();
+  if(t){
+    if(modalPending.kind==="group"){ const g=findGroup(modalPending.id); if(g) g.name=t; }
+    else{ const f=findWinery(modalPending.id); if(f) f.w.name=t; }
+    save();
+  }
+  closeRename(); render();
+}
 
-  if(!data.wineries.length){
-    listEl.appendChild(el("div","empty-top","No wineries yet. Add the one you're tasting at."));
+/* ---------- export / import / restore ---------- */
+function exportData(){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); const d=new Date(), p=n=>String(n).padStart(2,"0");
+  a.download=`wine-trip-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.json`;
+  a.href=url; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function handleImportFile(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    let parsed;
+    try{ parsed=JSON.parse(reader.result); }
+    catch(e){ alert("That file isn't valid JSON, so nothing was changed."); fileInput.value=""; return; }
+    const clean=sanitize(parsed,"Imported wines");
+    if(!clean){ alert("That file doesn't look like a Wine Trip backup, so nothing was changed."); fileInput.value=""; return; }
+    const c=counts(clean);
+    const ok=confirm("Import will REPLACE everything currently in the app with:\n\n"+
+      `${c.g} group(s), ${c.w} winery(ies), ${c.wines} wine(s).\n\n`+
+      "Your current data will be backed up first. Continue?");
+    if(!ok){ fileInput.value=""; return; }
+    try{ localStorage.setItem(KEY_BACKUP, JSON.stringify(data)); }catch(e){}
+    data=clean; save(); query=""; render(); fileInput.value="";
+    alert("Import complete.");
+  };
+  reader.onerror=()=>{ alert("Could not read that file."); fileInput.value=""; };
+  reader.readAsText(file);
+}
+function restoreBackup(){
+  const b=readJSON(KEY_BACKUP);
+  const clean=b && sanitize(b);
+  if(!clean){ alert("There's no backup to restore yet."); return; }
+  const c=counts(clean);
+  if(!confirm(`Restore the last import backup?\n\nThis replaces current data with ${c.g} group(s), ${c.w} winery(ies), ${c.wines} wine(s).`)) return;
+  data=clean; save(); render();
+  alert("Backup restored.");
+}
+
+/* ---------- search view ---------- */
+function buildView(q){
+  const s=q.trim().toLowerCase();
+  const out=[];
+  for(const g of data.groups){
+    const gMatch=g.name.toLowerCase().includes(s);
+    const wineries=[];
+    for(const w of g.wineries){
+      const wMatch=w.name.toLowerCase().includes(s);
+      if(gMatch||wMatch){ wineries.push({ ref:w, wines:w.wines }); }
+      else{
+        const wines=w.wines.filter(x=>x.name.toLowerCase().includes(s));
+        if(wines.length) wineries.push({ ref:w, wines });
+      }
+    }
+    if(gMatch||wineries.length) out.push({ ref:g, wineries });
+  }
+  return out;
+}
+
+/* ---------- render: nav ---------- */
+function updateNav(){
+  nav.querySelectorAll(".tab").forEach(t=>{
+    t.classList.toggle("active", t.dataset.page===currentPage);
+  });
+}
+
+/* ---------- render: wines page ---------- */
+function renderWines(){
+  pageEl.appendChild(el("h1","page","My Wines"));
+  pageEl.appendChild(el("p","sub","Group by trip or place. Tap a name to fold it."));
+
+  const bar=el("div","addbar");
+  const gi=el("input"); gi.type="text"; gi.placeholder="Group name (a trip, or Home)";
+  gi.autocomplete="off"; gi.value=groupDraft;
+  gi.oninput=()=>{ groupDraft=gi.value; };
+  gi.onkeydown=e=>{ if(e.key==="Enter") addGroup(gi); };
+  const gb=el("button","btn btn-rose","Add group"); gb.onclick=()=>addGroup(gi);
+  bar.appendChild(gi); bar.appendChild(gb);
+  pageEl.appendChild(bar);
+
+  if(!data.groups.length){
+    pageEl.appendChild(el("div","empty-top","No groups yet. Add a trip, a place, or 'Home' to start."));
     return;
   }
+  data.groups.forEach(g=>pageEl.appendChild(renderGroup(g)));
 
-  data.wineries.forEach(w => {
-    const card = el("div","winery");
-
-    // head: name + avg + delete
-    const head = el("div","winery-head");
-    head.appendChild(el("div","winery-name", w.name));
-
-    if(w.wines.length){
-      const avg = avgOf(w);
-      const badge = el("div","avg");
-      badge.appendChild(el("span",null,"★"));
-      badge.appendChild(el("span",null, avg==null ? "—" : avg.toFixed(1)));
-      const n = w.wines.length;
-      badge.appendChild(el("span","n", ` · ${n} wine${n>1?"s":""}`));
-      head.appendChild(badge);
-    }
-
-    const del = el("button","x","×");
-    del.title = "Delete winery";
-    del.setAttribute("aria-label","Delete winery");
-    del.onclick = () => deleteWinery(w.id);
-    head.appendChild(del);
-    card.appendChild(head);
-
-    card.appendChild(el("div","rule"));
-
-    // wines
-    if(!w.wines.length){
-      card.appendChild(el("div","empty","No wines yet — add your first pour."));
-    }else{
-      w.wines.forEach(wine => {
-        const row = el("div","wine");
-        row.appendChild(el("div","wine-name", wine.name));
-
-        const stars = el("div","stars");
-        for(let v=1; v<=5; v++){
-          const s = el("span", "star" + (v <= wine.stars ? " on" : ""), "★");
-          s.setAttribute("role","button");
-          s.setAttribute("aria-label", v + " star" + (v>1?"s":""));
-          s.onclick = () => rate(w.id, wine.id, v);
-          stars.appendChild(s);
-        }
-        row.appendChild(stars);
-
-        const wdel = el("button","x","×");
-        wdel.title = "Delete wine";
-        wdel.setAttribute("aria-label","Delete wine");
-        wdel.onclick = () => deleteWine(w.id, wine.id);
-        row.appendChild(wdel);
-
-        card.appendChild(row);
-      });
-    }
-
-    // add wine
-    const add = el("div","wine-add");
-    const inp = el("input");
-    inp.type = "text";
-    inp.placeholder = "Wine + variety (e.g. Malbec Reserva)";
-    inp.autocomplete = "off";
-    inp.value = drafts[w.id] || "";
-    inp.oninput = () => { drafts[w.id] = inp.value; };
-    inp.onkeydown = e => { if(e.key === "Enter") addWine(w.id); };
-    inp.dataset.wineryId = w.id;
-    const addBtn = el("button","btn btn-cyan","Add wine");
-    addBtn.onclick = () => addWine(w.id);
-    add.appendChild(inp);
-    add.appendChild(addBtn);
-    card.appendChild(add);
-
-    listEl.appendChild(card);
-  });
-
-  // restore focus to the winery we just acted on
-  if(focusWineInput){
-    const target = listEl.querySelector(`input[data-winery-id="${focusWineInput}"]`);
-    if(target){ target.focus(); }
-    focusWineInput = null;
+  if(focusAddWine){
+    const t=pageEl.querySelector(`input[data-add-wine="${focusAddWine}"]`);
+    if(t) t.focus(); focusAddWine=null;
+  }else if(focusAddWinery){
+    const t=pageEl.querySelector(`input[data-add-winery="${focusAddWinery}"]`);
+    if(t) t.focus(); focusAddWinery=null;
   }
 }
 
-/* ---- wire up top bar ---- */
-wineryInput.oninput = () => { newWineryDraft = wineryInput.value; };
-wineryInput.onkeydown = e => { if(e.key === "Enter") addWinery(); };
-document.getElementById("addWineryBtn").onclick = addWinery;
+function headBlock(kind, obj, chev, badge){
+  const head=el("div","head");
+  const main=el("div","head-main");
+  main.appendChild(el("span","chev",chev));
+  main.appendChild(el("span", kind==="group"?"group-name":"winery-name", obj.name));
+  if(badge) main.appendChild(badge);
+  main.onclick=()=> kind==="group" ? toggleGroup(obj.id) : toggleWinery(obj.id);
+  head.appendChild(main);
+  const acts=el("div","head-actions");
+  const pen=el("button","icon","\u270E"); pen.title="Rename";
+  pen.setAttribute("aria-label","Rename"); pen.onclick=()=>openRename(kind,obj.id);
+  const x=el("button","icon x","\u00D7"); x.title="Delete";
+  x.setAttribute("aria-label","Delete");
+  x.onclick=()=> kind==="group" ? deleteGroup(obj.id) : deleteWinery(obj.id);
+  acts.appendChild(pen); acts.appendChild(x);
+  head.appendChild(acts);
+  return head;
+}
+
+function renderGroup(g){
+  const card=el("div","group");
+  let badge=null;
+  if(g.wineries.length){
+    const a=groupAvg(g); badge=el("div","badge");
+    badge.appendChild(el("span",null,starGlyph()));
+    badge.appendChild(el("span",null,a==null?"\u2014":a.toFixed(1)));
+    badge.appendChild(el("span","n",` \u00B7 ${g.wineries.length} winer${g.wineries.length>1?"ies":"y"}`));
+  }
+  card.appendChild(headBlock("group", g, g.collapsed?"\u25B8":"\u25BE", badge));
+  if(g.collapsed) return card;
+
+  card.appendChild(el("div","rule"));
+  if(!g.wineries.length) card.appendChild(el("div","empty","No wineries yet in this group."));
+  else g.wineries.forEach(w=>card.appendChild(renderWinery(w)));
+
+  const add=el("div","add-winery");
+  const inp=el("input"); inp.type="text"; inp.placeholder="Winery name"; inp.autocomplete="off";
+  inp.value=wineryDrafts[g.id]||""; inp.dataset.addWinery=g.id;
+  inp.oninput=()=>{ wineryDrafts[g.id]=inp.value; };
+  inp.onkeydown=e=>{ if(e.key==="Enter") addWinery(g.id); };
+  const b=el("button","btn btn-green","Add winery"); b.onclick=()=>addWinery(g.id);
+  add.appendChild(inp); add.appendChild(b);
+  card.appendChild(add);
+  return card;
+}
+
+function renderWinery(w){
+  const card=el("div","winery");
+  let badge=null;
+  if(w.wines.length){
+    const a=wineryAvg(w); badge=el("div","badge");
+    badge.appendChild(el("span",null,starGlyph()));
+    badge.appendChild(el("span",null,a==null?"\u2014":a.toFixed(1)));
+    badge.appendChild(el("span","n",` \u00B7 ${w.wines.length} wine${w.wines.length>1?"s":""}`));
+  }
+  card.appendChild(headBlock("winery", w, w.collapsed?"\u25B8":"\u25BE", badge));
+  if(w.collapsed) return card;
+
+  card.appendChild(el("div","rule"));
+  if(!w.wines.length) card.appendChild(el("div","empty","No wines yet \u2014 add your first pour."));
+  else w.wines.forEach(wine=>card.appendChild(renderWineRow(w.id, wine, false)));
+
+  const add=el("div","add-wine");
+  const inp=el("input"); inp.type="text"; inp.placeholder="Wine + variety (e.g. Malbec Reserva)";
+  inp.autocomplete="off"; inp.value=wineDrafts[w.id]||""; inp.dataset.addWine=w.id;
+  inp.oninput=()=>{ wineDrafts[w.id]=inp.value; };
+  inp.onkeydown=e=>{ if(e.key==="Enter") addWine(w.id); };
+  const b=el("button","btn btn-cyan","Add wine"); b.onclick=()=>addWine(w.id);
+  add.appendChild(inp); add.appendChild(b);
+  card.appendChild(add);
+  return card;
+}
+
+function renderWineRow(wineryId, wine, readonly, hideDelete){
+  const row=el("div","wine");
+  row.appendChild(el("div","wine-name", wine.name));
+  const stars=el("div","stars");
+  for(let v=1;v<=5;v++){
+    const s=el("span","star"+(v<=wine.stars?" on":"")+(readonly?" ro":""), starGlyph());
+    if(!readonly){
+      s.setAttribute("role","button");
+      s.setAttribute("aria-label",v+" star"+(v>1?"s":""));
+      s.onclick=()=>rate(wineryId, wine.id, v);
+    }
+    stars.appendChild(s);
+  }
+  row.appendChild(stars);
+  if(!readonly && !hideDelete){
+    const dx=el("button","icon x","\u00D7"); dx.title="Delete wine";
+    dx.setAttribute("aria-label","Delete wine"); dx.onclick=()=>deleteWine(wineryId, wine.id);
+    row.appendChild(dx);
+  }
+  return row;
+}
+
+/* ---------- render: search page ---------- */
+function renderSearch(){
+  pageEl.appendChild(el("h1","page","Search"));
+  pageEl.appendChild(el("p","sub","Find any group, winery or wine. Rate right from here."));
+
+  if(!searchInput){
+    searchInput=el("input"); searchInput.type="text";
+    searchInput.placeholder="Search groups, wineries, wines"; searchInput.autocomplete="off";
+    searchInput.oninput=()=>{ query=searchInput.value; renderSearchResults(); };
+  }
+  searchInput.value=query;
+  const bar=el("div","addbar"); bar.appendChild(searchInput);
+  pageEl.appendChild(bar);
+
+  searchResultsEl=el("div"); pageEl.appendChild(searchResultsEl);
+  renderSearchResults();
+  setTimeout(()=>searchInput.focus(),30);
+}
+
+function renderSearchResults(){
+  if(!searchResultsEl) return;
+  searchResultsEl.innerHTML="";
+  const q=query.trim();
+  if(!q){ searchResultsEl.appendChild(el("div","empty-top","Type to search your wineries and wines.")); return; }
+  const view=buildView(q);
+  if(!view.length){ searchResultsEl.appendChild(el("div","empty-top",`No matches for "${q}".`)); return; }
+
+  view.forEach(gv=>{
+    const card=el("div","group");
+    const head=el("div","head");
+    const main=el("div","head-main"); main.style.cursor="default";
+    main.appendChild(el("span","chev","\u25BE"));
+    main.appendChild(el("span","group-name",gv.ref.name));
+    head.appendChild(main); card.appendChild(head);
+    card.appendChild(el("div","rule"));
+    gv.wineries.forEach(wv=>{
+      const wc=el("div","winery");
+      const wh=el("div","head");
+      const wm=el("div","head-main"); wm.style.cursor="default";
+      wm.appendChild(el("span","winery-name",wv.ref.name));
+      const a=wineryAvg(wv.ref);
+      if(wv.ref.wines.length){
+        const badge=el("div","badge");
+        badge.appendChild(el("span",null,starGlyph()));
+        badge.appendChild(el("span",null,a==null?"\u2014":a.toFixed(1)));
+        wm.appendChild(badge);
+      }
+      wh.appendChild(wm); wc.appendChild(wh);
+      wc.appendChild(el("div","rule"));
+      wv.wines.forEach(wine=>wc.appendChild(renderWineRow(wv.ref.id, wine, false, true)));
+      card.appendChild(wc);
+    });
+    searchResultsEl.appendChild(card);
+  });
+}
+
+/* ---------- render: settings page ---------- */
+function renderSettings(){
+  pageEl.appendChild(el("h1","page","Settings"));
+  pageEl.appendChild(el("p","sub","Back up, restore, and move your data."));
+
+  const c=counts(data);
+  const statCard=el("div","card");
+  const row=el("div","stat-row");
+  [["Groups",c.g],["Wineries",c.w],["Wines",c.wines]].forEach(([k,v])=>{
+    const s=el("div","stat"); s.appendChild(el("div","v",String(v))); s.appendChild(el("div","k",k)); row.appendChild(s);
+  });
+  statCard.appendChild(row);
+  pageEl.appendChild(statCard);
+
+  const dataCard=el("div","card");
+  dataCard.appendChild(el("h3",null,"Backup & transfer"));
+  dataCard.appendChild(el("p",null,"Export downloads everything as a JSON file. Import replaces current data (validated first, and your current data is backed up before it does)."));
+  const stack=el("div","stack");
+  const ex=el("button","btn btn-gold btn-block","Export JSON"); ex.onclick=exportData;
+  const im=el("button","btn btn-cyan btn-block","Import JSON"); im.onclick=()=>fileInput.click();
+  stack.appendChild(ex); stack.appendChild(im);
+  if(localStorage.getItem(KEY_BACKUP)){
+    const rb=el("button","btn btn-block","Restore last import backup"); rb.onclick=restoreBackup;
+    stack.appendChild(rb);
+  }
+  dataCard.appendChild(stack);
+  pageEl.appendChild(dataCard);
+
+  const note=el("div","card");
+  note.appendChild(el("h3",null,"About your data"));
+  note.appendChild(el("p",null,"Everything is stored only on this device, in this browser. Nothing is sent anywhere. Your original pre-groups data is kept as a separate backup and is never overwritten."));
+  pageEl.appendChild(note);
+}
+
+/* ---------- top-level render ---------- */
+function render(){
+  updateNav();
+  pageEl.innerHTML="";
+  if(currentPage==="wines") renderWines();
+  else if(currentPage==="search") renderSearch();
+  else renderSettings();
+}
+
+/* ---------- wire up ---------- */
+nav.querySelectorAll(".tab").forEach(t=>{
+  t.onclick=()=>{ currentPage=t.dataset.page; window.scrollTo(0,0); render(); };
+});
+fileInput.onchange=e=>{ const f=e.target.files&&e.target.files[0]; if(f) handleImportFile(f); };
+document.getElementById("modalCancel").onclick=closeRename;
+document.getElementById("modalSave").onclick=saveRename;
+modalInput.onkeydown=e=>{ if(e.key==="Enter") saveRename(); if(e.key==="Escape") closeRename(); };
+modal.onclick=e=>{ if(e.target===modal) closeRename(); };
 
 render();
 </script>
