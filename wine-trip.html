@@ -80,6 +80,7 @@
   .icon{flex-shrink:0;color:var(--muted);font-size:1.02rem;line-height:1;
     padding:7px 8px;border-radius:8px}
   .icon.x{font-size:1.22rem}
+  .icon svg{width:17px;height:17px;display:block}
   .icon:hover,.icon:active{color:var(--ink)}
   .icon.x:hover,.icon.x:active{color:var(--danger)}
 
@@ -132,6 +133,12 @@
     padding:18px;width:100%;max-width:420px}
   .sheet-title{font-family:Georgia,serif;font-size:1.1rem;margin-bottom:12px}
   .sheet-actions{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+  .sheet-share{max-width:520px}
+  .share-preview{max-height:58vh;overflow:auto;border-radius:12px;background:#000;
+    border:1px solid var(--group-edge)}
+  .share-preview canvas{display:block;width:100%;height:auto}
+  .share-hint{color:var(--muted);font-size:.78rem;margin:10px 2px 0;text-align:center}
+  .share-actions{flex-wrap:wrap}
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
   :focus-visible{outline:2px solid var(--rose);outline-offset:2px}
@@ -162,6 +169,19 @@
     <div class="sheet-actions">
       <button class="btn" id="modalCancel">Cancel</button>
       <button class="btn btn-gold" id="modalSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="shareModal" hidden>
+  <div class="sheet sheet-share">
+    <div class="sheet-title" id="shareTitle">Share ratings</div>
+    <div class="share-preview" id="sharePreview"></div>
+    <div class="share-hint" id="shareHint"></div>
+    <div class="sheet-actions share-actions">
+      <button class="btn" id="shareClose">Close</button>
+      <button class="btn" id="shareSave">Save image</button>
+      <button class="btn btn-gold" id="shareDo">Share</button>
     </div>
   </div>
 </div>
@@ -450,6 +470,13 @@ function headBlock(kind, obj, chev, badge){
   main.onclick=()=> kind==="group" ? toggleGroup(obj.id) : toggleWinery(obj.id);
   head.appendChild(main);
   const acts=el("div","head-actions");
+  if(kind==="group"){
+    const sh=el("button","icon"); sh.title="Share as image";
+    sh.setAttribute("aria-label","Share group as image");
+    sh.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>';
+    sh.onclick=()=>openShare(obj.id);
+    acts.appendChild(sh);
+  }
   const pen=el("button","icon","\u270E"); pen.title="Rename";
   pen.setAttribute("aria-label","Rename"); pen.onclick=()=>openRename(kind,obj.id);
   const x=el("button","icon x","\u00D7"); x.title="Delete";
@@ -635,6 +662,201 @@ function render(){
   else renderSettings();
 }
 
+/* ---------- share group as image ---------- */
+let shareBlob=null, shareName="";
+const MONTHS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function fmtDate(d){ return d.getDate()+" "+MONTHS[d.getMonth()]+" "+d.getFullYear(); }
+function fileDate(d){ const p=n=>String(n).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function slug(s){ return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"group"; }
+
+// Only rated wines; wineries best-first; wines best-first (stable ties).
+function prepareShare(g){
+  return g.wineries
+    .map(w=>({ ref:w, avg:wineryAvg(w),
+               wines:w.wines.filter(x=>x.stars>0).slice().sort((a,b)=>b.stars-a.stars) }))
+    .filter(o=>o.wines.length>0)
+    .sort((a,b)=>b.avg-a.avg);
+}
+
+function ellipsize(ctx,text,maxW){
+  if(ctx.measureText(text).width<=maxW) return text;
+  let s=text;
+  while(s.length>1 && ctx.measureText(s+"\u2026").width>maxW) s=s.slice(0,-1);
+  return s+"\u2026";
+}
+function wrapLines(ctx,text,font,maxW,maxLines){
+  ctx.font=font;
+  if(maxLines<=1) return [ellipsize(ctx,text,maxW)];
+  const words=String(text).split(/\s+/).filter(Boolean);
+  const lines=[]; let cur="";
+  for(let i=0;i<words.length;i++){
+    const t=cur?cur+" "+words[i]:words[i];
+    if(ctx.measureText(t).width<=maxW){ cur=t; }
+    else{
+      if(cur) lines.push(cur); else { lines.push(ellipsize(ctx,words[i],maxW)); cur=""; continue; }
+      cur=words[i];
+      if(lines.length===maxLines-1){
+        lines.push(ellipsize(ctx,words.slice(i).join(" "),maxW));
+        return lines;
+      }
+    }
+  }
+  if(cur) lines.push(ellipsize(ctx,cur,maxW));
+  return lines.slice(0,maxLines);
+}
+
+function buildCard(g, prepared){
+  const scale=2, W=1080, P=56, cW=W-2*P;
+  const C={ink:"#efe7e3",muted:"#9a8f96",gold:"#ffcf3f",goldDim:"#4a4048",rose:"#e77aa0"};
+  const F={
+    eyebrow:'600 22px Arial,Helvetica,sans-serif',
+    group:'600 60px Georgia,"Times New Roman",serif',
+    meta:'400 27px Arial,Helvetica,sans-serif',
+    rank:'600 27px Arial,Helvetica,sans-serif',
+    winery:'600 40px Georgia,"Times New Roman",serif',
+    wavg:'600 33px Arial,Helvetica,sans-serif',
+    wine:'400 30px Arial,Helvetica,sans-serif',
+    star:'30px Arial,Helvetica,sans-serif',
+    footer:'400 22px Arial,Helvetica,sans-serif'
+  };
+  const dateStr=fmtDate(new Date());
+  const gAvg=groupAvg(g);
+  const meta1="\u2605 "+(gAvg==null?"\u2014":gAvg.toFixed(1));
+  const nW=prepared.length;
+  const meta2="   \u00B7   "+nW+" winer"+(nW>1?"ies":"y")+"   \u00B7   "+dateStr;
+
+  const mc=document.createElement("canvas").getContext("2d");
+  mc.font=F.star; const starW=mc.measureText("\u2605").width, starGap=7;
+  const starColW=5*starW+4*starGap;
+  const badgeR=26, badgeD=52, nameX=P+badgeD+22;
+
+  function pass(ctx,draw){
+    let y=60;
+    if(draw){ ctx.font=F.eyebrow; ctx.fillStyle=C.rose; ctx.textAlign="left"; ctx.textBaseline="top";
+      ctx.save(); ctx.fillText("W I N E   T R I P",P,y); ctx.restore(); }
+    y+=30+18;
+    const gLines=wrapLines(mc,g.name,F.group,cW,2);
+    for(const ln of gLines){
+      if(draw){ ctx.font=F.group; ctx.fillStyle=C.ink; ctx.textBaseline="top"; ctx.textAlign="left"; ctx.fillText(ln,P,y); }
+      y+=68;
+    }
+    y+=8;
+    if(draw){
+      ctx.textBaseline="top"; ctx.textAlign="left";
+      ctx.font=F.meta; ctx.fillStyle=C.gold; ctx.fillText(meta1,P,y);
+      const w1=ctx.measureText(meta1).width;
+      ctx.fillStyle=C.muted; ctx.fillText(meta2,P+w1,y);
+    }
+    y+=34+28;
+    if(draw){
+      const gr=ctx.createLinearGradient(P,0,P+cW,0);
+      gr.addColorStop(0,C.rose); gr.addColorStop(1,"rgba(231,122,160,0.04)");
+      ctx.fillStyle=gr; ctx.fillRect(P,y,cW,4);
+    }
+    y+=4+42;
+
+    prepared.forEach((o,i)=>{
+      const avgTxt="\u2605 "+o.avg.toFixed(1);
+      mc.font=F.wavg; const avgW=mc.measureText(avgTxt).width;
+      const nameMaxW=cW-badgeD-22-avgW-24;
+      const wLines=wrapLines(mc,o.ref.name,F.winery,nameMaxW,2);
+      const nameH=wLines.length*46;
+      const headerH=Math.max(badgeD,nameH);
+      const cy=y+headerH/2;
+      if(draw){
+        ctx.beginPath(); ctx.arc(P+badgeR,cy,badgeR,0,Math.PI*2);
+        ctx.fillStyle="rgba(231,122,160,0.14)"; ctx.fill();
+        ctx.lineWidth=1.5; ctx.strokeStyle="rgba(231,122,160,0.5)"; ctx.stroke();
+        ctx.font=F.rank; ctx.fillStyle=C.rose; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText(String(i+1),P+badgeR,cy+1);
+        ctx.textAlign="left"; ctx.textBaseline="top"; ctx.font=F.winery; ctx.fillStyle=C.ink;
+        let ny=cy-nameH/2;
+        for(const ln of wLines){ ctx.fillText(ln,nameX,ny); ny+=46; }
+        ctx.font=F.wavg; ctx.fillStyle=C.gold; ctx.textAlign="right"; ctx.textBaseline="middle";
+        ctx.fillText(avgTxt,P+cW,cy); ctx.textAlign="left";
+      }
+      y+=headerH+16;
+      if(draw){ ctx.fillStyle="rgba(255,255,255,0.08)"; ctx.fillRect(nameX,y,P+cW-nameX,1.5); }
+      y+=1.5+16;
+      const rowH=50, starX=P+cW-starColW, wineNameMaxW=starX-24-nameX;
+      o.wines.forEach(wine=>{
+        const rcy=y+rowH/2;
+        if(draw){
+          const nm=wrapLines(mc,wine.name,F.wine,wineNameMaxW,1)[0];
+          ctx.font=F.wine; ctx.fillStyle=C.ink; ctx.textAlign="left"; ctx.textBaseline="middle";
+          ctx.fillText(nm,nameX,rcy);
+          ctx.font=F.star; ctx.textBaseline="middle"; ctx.textAlign="left";
+          for(let s=0;s<5;s++){
+            ctx.fillStyle=(s<wine.stars)?C.gold:C.goldDim;
+            ctx.fillText("\u2605",starX+s*(starW+starGap),rcy);
+          }
+        }
+        y+=rowH;
+      });
+      y+=40;
+    });
+
+    if(draw){
+      ctx.font=F.footer; ctx.fillStyle="rgba(154,143,150,0.55)";
+      ctx.textAlign="center"; ctx.textBaseline="top";
+      ctx.fillText("made with Wine Trip",W/2,y); ctx.textAlign="left";
+    }
+    y+=26+52;
+    return y;
+  }
+
+  const H=Math.ceil(pass(mc,false));
+  const canvas=document.createElement("canvas");
+  canvas.width=Math.round(W*scale); canvas.height=Math.round(H*scale);
+  const ctx=canvas.getContext("2d");
+  ctx.scale(scale,scale);
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,"#1b1216"); bg.addColorStop(1,"#0d0a0c");
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+  pass(ctx,true);
+  return canvas;
+}
+
+function openShare(groupId){
+  const g=findGroup(groupId); if(!g) return;
+  const prepared=prepareShare(g);
+  if(!prepared.length){ alert("Nothing rated in this group yet \u2014 rate some wines first."); return; }
+  const canvas=buildCard(g,prepared);
+  shareName="wine-trip-"+slug(g.name)+"-"+fileDate(new Date())+".png";
+  const box=document.getElementById("sharePreview"); box.innerHTML=""; box.appendChild(canvas);
+  const hint=document.getElementById("shareHint");
+  const shareDo=document.getElementById("shareDo");
+  shareDo.style.display = navigator.share ? "" : "none";
+  hint.textContent = navigator.share
+    ? "Share opens your phone's share sheet. Or save the image."
+    : "Save the image, then attach it wherever you like.";
+  shareBlob=null;
+  canvas.toBlob(b=>{ shareBlob=b; }, "image/png");
+  document.getElementById("shareModal").hidden=false;
+}
+function closeShare(){
+  document.getElementById("shareModal").hidden=true;
+  document.getElementById("sharePreview").innerHTML="";
+  shareBlob=null;
+}
+function saveImage(){
+  if(!shareBlob) return;
+  const url=URL.createObjectURL(shareBlob);
+  const a=document.createElement("a"); a.href=url; a.download=shareName;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function shareImage(){
+  if(!shareBlob){ return; }
+  try{
+    const file=new File([shareBlob],shareName,{type:"image/png"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:"Wine ratings"});
+    }else{ saveImage(); }
+  }catch(e){ /* user cancelled or share failed */ }
+}
+
 /* ---------- wire up ---------- */
 nav.querySelectorAll(".tab").forEach(t=>{
   t.onclick=()=>{ currentPage=t.dataset.page; window.scrollTo(0,0); render(); };
@@ -644,6 +866,10 @@ document.getElementById("modalCancel").onclick=closeRename;
 document.getElementById("modalSave").onclick=saveRename;
 modalInput.onkeydown=e=>{ if(e.key==="Enter") saveRename(); if(e.key==="Escape") closeRename(); };
 modal.onclick=e=>{ if(e.target===modal) closeRename(); };
+document.getElementById("shareClose").onclick=closeShare;
+document.getElementById("shareSave").onclick=saveImage;
+document.getElementById("shareDo").onclick=shareImage;
+document.getElementById("shareModal").onclick=e=>{ if(e.target.id==="shareModal") closeShare(); };
 
 render();
 </script>
