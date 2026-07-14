@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Movie Score</title>
+<style>
+  :root{
+    --bg:#131110;
+    --card:#1e1a17;
+    --card2:#26211d;
+    --line:#332c26;
+    --text:#ede7de;
+    --muted:#9c9086;
+    --gold:#f5c542;
+    --gold-dim:#4a4033;
+    --accent:#c96a4a;
+    --danger:#c85a4e;
+    --serif:Georgia,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{padding-bottom:76px;min-height:100vh;}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+  input{font-family:inherit;}
+
+  header.top{
+    position:sticky;top:0;z-index:20;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 18px 12px;background:linear-gradient(var(--bg),var(--bg) 78%,transparent);
+  }
+  header.top h1{font-family:var(--serif);font-size:26px;font-weight:600;margin:0;letter-spacing:.3px;}
+  .hdr-btn{
+    width:40px;height:40px;border-radius:12px;background:var(--card);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--gold);
+  }
+  .hdr-btn:active{background:var(--card2);}
+
+  main{padding:0 14px;max-width:640px;margin:0 auto;}
+
+  .addbar{display:flex;gap:8px;margin:4px 0 16px;}
+  .addbar input{
+    flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:13px 14px;color:var(--text);font-size:16px;
+  }
+  .addbar input:focus{outline:none;border-color:var(--accent);}
+  .addbar button{
+    background:var(--accent);color:#fff;border-radius:12px;padding:0 18px;font-size:15px;font-weight:600;
+  }
+  .addbar button:active{filter:brightness(.9);}
+
+  .movie{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    margin-bottom:10px;overflow:hidden;
+  }
+  .movie-head{display:flex;align-items:center;gap:12px;padding:14px 15px;}
+  .movie-info{flex:1;min-width:0;}
+  .movie-name{font-family:var(--serif);font-size:18px;font-weight:600;line-height:1.2;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .movie-meta{font-size:12.5px;color:var(--muted);margin-top:4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .score{display:flex;align-items:center;gap:5px;flex-shrink:0;font-family:var(--serif);}
+  .score .num{font-size:21px;font-weight:600;color:var(--gold);}
+  .score .st{font-size:16px;color:var(--gold);}
+  .score.none .num{color:var(--muted);font-size:14px;font-family:var(--sans);}
+  .chev{color:var(--muted);font-size:13px;transition:transform .2s;flex-shrink:0;}
+  .movie.open .chev{transform:rotate(90deg);}
+
+  .movie-body{display:none;padding:2px 15px 14px;border-top:1px solid var(--line);}
+  .movie.open .movie-body{display:block;}
+  .prater{padding:10px 0;border-bottom:1px solid var(--line);}
+  .prater:last-of-type{border-bottom:none;}
+  .prater .pname{font-size:14px;color:var(--text);margin-bottom:7px;display:flex;justify-content:space-between;}
+  .prater .pval{color:var(--muted);font-size:13px;}
+  .stars{display:flex;gap:2px;flex-wrap:wrap;}
+  .stars .s{font-size:22px;color:var(--gold-dim);line-height:1;padding:2px 1px;}
+  .stars .s.on{color:var(--gold);}
+  .stars .s:active{transform:scale(1.2);}
+  .row-actions{display:flex;gap:8px;margin-top:12px;}
+  .row-actions button{
+    flex:1;padding:9px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card2);font-size:13px;color:var(--muted);
+  }
+  .row-actions button.del{color:var(--danger);}
+  .row-actions button:active{background:var(--line);}
+  .no-people{color:var(--muted);font-size:13px;padding:12px 0;text-align:center;}
+
+  .empty{text-align:center;color:var(--muted);padding:50px 20px;font-size:15px;line-height:1.6;}
+  .empty .big{font-size:34px;margin-bottom:12px;opacity:.6;}
+
+  /* settings */
+  h2.sec{font-family:var(--serif);font-size:15px;color:var(--muted);font-weight:600;
+    margin:22px 4px 10px;text-transform:uppercase;letter-spacing:1px;}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 15px;}
+  .person{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);}
+  .person:last-child{border-bottom:none;}
+  .person .pn{flex:1;font-size:16px;}
+  .person .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0;}
+  .icon-btn{width:34px;height:34px;border-radius:9px;background:var(--card2);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:15px;}
+  .icon-btn.del{color:var(--danger);}
+  .stat-row{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line);font-size:15px;}
+  .stat-row:last-child{border-bottom:none;}
+  .stat-row .v{color:var(--gold);font-weight:600;}
+  .btn-full{width:100%;padding:14px;border-radius:12px;font-size:15px;font-weight:600;margin-top:10px;
+    border:1px solid var(--line);background:var(--card);color:var(--text);}
+  .btn-full:active{background:var(--card2);}
+  .btn-full.primary{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .btn-full.restore{color:var(--gold);border-color:var(--gold-dim);}
+  .hint{font-size:12.5px;color:var(--muted);text-align:center;margin-top:10px;line-height:1.5;padding:0 8px;}
+
+  /* bottom nav */
+  nav.tabs{
+    position:fixed;bottom:0;left:0;right:0;z-index:30;
+    display:flex;background:var(--card);border-top:1px solid var(--line);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav.tabs .tab{flex:1;padding:11px 0 10px;display:flex;flex-direction:column;align-items:center;gap:3px;
+    color:var(--muted);font-size:11px;}
+  nav.tabs .tab .ic{font-size:20px;}
+  nav.tabs .tab.active{color:var(--gold);}
+
+  /* modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:none;
+    align-items:center;justify-content:center;padding:24px;}
+  .modal-bg.show{display:flex;}
+  .modal{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;
+    width:100%;max-width:340px;}
+  .modal h3{font-family:var(--serif);margin:0 0 14px;font-size:19px;}
+  .modal p{color:var(--muted);font-size:14px;margin:0 0 16px;line-height:1.5;}
+  .modal input{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:10px;
+    padding:12px;color:var(--text);font-size:16px;margin-bottom:16px;}
+  .modal input:focus{outline:none;border-color:var(--accent);}
+  .modal-btns{display:flex;gap:10px;}
+  .modal-btns button{flex:1;padding:12px;border-radius:10px;font-size:15px;font-weight:600;}
+  .modal-btns .cancel{background:var(--card2);border:1px solid var(--line);color:var(--muted);}
+  .modal-btns .ok{background:var(--accent);color:#fff;}
+  .modal-btns .ok.danger{background:var(--danger);}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1 id="pageTitle">Movie Score</h1>
+  <button class="hdr-btn" id="shareBtn" title="Share top 20">⤴&#xFE0E;</button>
+</header>
+
+<main id="page"></main>
+
+<nav class="tabs" id="nav">
+  <button class="tab" data-page="movies"><span class="ic">▷</span>Movies</button>
+  <button class="tab" data-page="search"><span class="ic">⌕</span>Search</button>
+  <button class="tab" data-page="settings"><span class="ic">⚙&#xFE0E;</span>Settings</button>
+</nav>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <p id="modalMsg" style="display:none"></p>
+    <input id="modalInput" type="text" autocomplete="off">
+    <div class="modal-btns">
+      <button class="cancel" id="modalCancel">Cancel</button>
+      <button class="ok" id="modalOk">Save</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="application/json,.json" style="display:none">
+
+<script>
+/* ================= storage ================= */
+const KEY="movieTrip.v1", BACKUP="movieTrip.v1.backup";
+let data=load();
+let currentPage="movies";
+let searchTerm="";
+const openMovies=new Set();
+
+function load(){
+  try{
+    const d=JSON.parse(localStorage.getItem(KEY));
+    if(d&&Array.isArray(d.movies)&&Array.isArray(d.people)) return d;
+  }catch(e){}
+  return {people:[],movies:[]};
+}
+function save(){ localStorage.setItem(KEY,JSON.stringify(data)); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+
+/* ================= helpers ================= */
+function avg(movie){
+  const vals=data.people.map(p=>movie.ratings[p.id]).filter(v=>typeof v==="number"&&v>0);
+  if(!vals.length) return null;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+function ratersOf(movie){
+  return data.people.filter(p=>typeof movie.ratings[p.id]==="number"&&movie.ratings[p.id]>0);
+}
+function fmtDate(iso){
+  const d=new Date(iso);
+  return d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+
+/* ================= modal ================= */
+const modalBg=document.getElementById("modalBg");
+const modalTitle=document.getElementById("modalTitle");
+const modalMsg=document.getElementById("modalMsg");
+const modalInput=document.getElementById("modalInput");
+const modalOk=document.getElementById("modalOk");
+let modalSave=null;
+
+function openPrompt(title,initial,onSave){
+  modalTitle.textContent=title;
+  modalMsg.style.display="none";
+  modalInput.style.display="block";
+  modalInput.value=initial||"";
+  modalOk.textContent="Save";
+  modalOk.classList.remove("danger");
+  modalSave=()=>{ const v=modalInput.value.trim(); if(v){ onSave(v); closeModal(); } };
+  modalBg.classList.add("show");
+  setTimeout(()=>{modalInput.focus();modalInput.select();},50);
+}
+function openConfirm(title,msg,okLabel,danger,onOk){
+  modalTitle.textContent=title;
+  modalMsg.textContent=msg;
+  modalMsg.style.display="block";
+  modalInput.style.display="none";
+  modalOk.textContent=okLabel||"Confirm";
+  modalOk.classList.toggle("danger",!!danger);
+  modalSave=()=>{ onOk(); closeModal(); };
+  modalBg.classList.add("show");
+}
+function closeModal(){ modalBg.classList.remove("show"); modalSave=null; }
+modalOk.onclick=()=>{ if(modalSave) modalSave(); };
+document.getElementById("modalCancel").onclick=closeModal;
+modalBg.onclick=e=>{ if(e.target===modalBg) closeModal(); };
+modalInput.onkeydown=e=>{ if(e.key==="Enter"&&modalSave) modalSave(); if(e.key==="Escape") closeModal(); };
+
+/* ================= render dispatch ================= */
+const page=document.getElementById("page");
+const nav=document.getElementById("nav");
+const pageTitle=document.getElementById("pageTitle");
+const shareBtn=document.getElementById("shareBtn");
+
+function render(){
+  nav.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.page===currentPage));
+  shareBtn.style.display = currentPage==="movies" ? "flex":"none";
+  pageTitle.textContent = currentPage==="movies"?"Movie Score":currentPage==="search"?"Search":"Settings";
+  page.innerHTML="";
+  if(currentPage==="movies") renderMovies();
+  else if(currentPage==="search") renderSearch();
+  else renderSettings();
+}
+
+/* ================= movies page ================= */
+function renderMovies(){
+  const add=document.createElement("div");
+  add.className="addbar";
+  add.innerHTML=`<input id="addMovie" placeholder="Add a movie…" autocomplete="off"><button id="addMovieBtn">Add</button>`;
+  page.appendChild(add);
+  const inp=add.querySelector("#addMovie");
+  const doAdd=()=>{ const v=inp.value.trim(); if(!v)return;
+    data.movies.unshift({id:uid(),name:v,date:new Date().toISOString(),ratings:{}});
+    save(); render(); };
+  add.querySelector("#addMovieBtn").onclick=doAdd;
+  inp.onkeydown=e=>{ if(e.key==="Enter") doAdd(); };
+
+  if(!data.movies.length){
+    const e=document.createElement("div");
+    e.className="empty";
+    e.innerHTML=`<div class="big">▷</div>No movies yet.<br>Add one above to start rating.`;
+    page.appendChild(e);
+    return;
+  }
+  const list=[...data.movies].sort((a,b)=>{
+    const av=avg(a),bv=avg(b);
+    if(av===null&&bv===null) return new Date(b.date)-new Date(a.date);
+    if(av===null) return 1;
+    if(bv===null) return -1;
+    return bv-av;
+  });
+  list.forEach(m=>page.appendChild(movieEl(m)));
+}
+
+function movieEl(m,readOnly){
+  const el=document.createElement("div");
+  const isOpen = !readOnly && openMovies.has(m.id);
+  el.className="movie"+(isOpen?" open":"");
+  const a=avg(m);
+  const raters=ratersOf(m);
+  const meta = raters.length
+    ? `Rated by ${esc(raters.map(p=>p.name).join(", "))} · ${fmtDate(m.date)}`
+    : `Not rated yet · ${fmtDate(m.date)}`;
+  const scoreHtml = a!==null
+    ? `<span class="num">${a.toFixed(1)}</span><span class="st">★</span>`
+    : `<span class="num">—</span>`;
+  el.innerHTML=`
+    <div class="movie-head">
+      <div class="movie-info">
+        <div class="movie-name">${esc(m.name)}</div>
+        <div class="movie-meta">${meta}</div>
+      </div>
+      <div class="score${a===null?' none':''}">${scoreHtml}</div>
+      ${readOnly?"":'<div class="chev">›</div>'}
+    </div>
+    ${readOnly?"":'<div class="movie-body"></div>'}`;
+
+  if(!readOnly){
+    el.querySelector(".movie-head").onclick=()=>{
+      if(openMovies.has(m.id)) openMovies.delete(m.id); else openMovies.add(m.id);
+      el.classList.toggle("open");
+      if(el.classList.contains("open")) fillBody(el.querySelector(".movie-body"),m);
+    };
+    if(openMovies.has(m.id)) fillBody(el.querySelector(".movie-body"),m);
+  }
+  return el;
+}
+
+function fillBody(body,m){
+  body.innerHTML="";
+  if(!data.people.length){
+    body.innerHTML=`<div class="no-people">Add people in Settings to start rating.</div>`;
+  }else{
+    data.people.forEach(p=>{
+      const cur=m.ratings[p.id]||0;
+      const pr=document.createElement("div");
+      pr.className="prater";
+      pr.innerHTML=`<div class="pname"><span>${esc(p.name)}</span><span class="pval">${cur?cur+"/10":"—"}</span></div>`;
+      const stars=document.createElement("div");
+      stars.className="stars";
+      for(let i=1;i<=10;i++){
+        const s=document.createElement("span");
+        s.className="s"+(i<=cur?" on":"");
+        s.textContent="★";
+        s.onclick=()=>{
+          m.ratings[p.id] = (m.ratings[p.id]===i) ? 0 : i; // tap same value to clear
+          if(!m.ratings[p.id]) delete m.ratings[p.id];
+          save();
+          fillBody(body,m);
+          // refresh collapsed score without collapsing
+          const head=body.parentElement.querySelector(".movie-head");
+          const a=avg(m), raters=ratersOf(m);
+          const sc=head.querySelector(".score");
+          sc.className="score"+(a===null?" none":"");
+          sc.innerHTML=a!==null?`<span class="num">${a.toFixed(1)}</span><span class="st">★</span>`:`<span class="num">—</span>`;
+          head.querySelector(".movie-meta").textContent = raters.length
+            ? `Rated by ${raters.map(x=>x.name).join(", ")} · ${fmtDate(m.date)}`
+            : `Not rated yet · ${fmtDate(m.date)}`;
+        };
+        stars.appendChild(s);
+      }
+      pr.appendChild(stars);
+      body.appendChild(pr);
+    });
+  }
+  const actions=document.createElement("div");
+  actions.className="row-actions";
+  actions.innerHTML=`<button class="rn">✎ Rename</button><button class="del">✕ Delete</button>`;
+  actions.querySelector(".rn").onclick=()=>openPrompt("Rename movie",m.name,v=>{m.name=v;save();render();});
+  actions.querySelector(".del").onclick=()=>openConfirm("Delete movie",`Delete “${m.name}”? This can't be undone.`,"Delete",true,()=>{
+    data.movies=data.movies.filter(x=>x.id!==m.id); openMovies.delete(m.id); save(); render();
+  });
+  body.appendChild(actions);
+}
+
+/* ================= search page ================= */
+function renderSearch(){
+  const bar=document.createElement("div");
+  bar.className="addbar";
+  bar.innerHTML=`<input id="searchInp" placeholder="Search movies by name…" autocomplete="off" value="${esc(searchTerm)}">`;
+  page.appendChild(bar);
+  const results=document.createElement("div");
+  page.appendChild(results);
+
+  const inp=bar.querySelector("#searchInp");
+  const run=()=>{
+    searchTerm=inp.value;
+    const q=searchTerm.trim().toLowerCase();
+    results.innerHTML="";
+    if(!q){ results.innerHTML=`<div class="empty">Type to search your movies.</div>`; return; }
+    const hits=data.movies.filter(m=>m.name.toLowerCase().includes(q))
+      .sort((a,b)=>{const av=avg(a),bv=avg(b);return (bv===null?-1:bv)-(av===null?-1:av);});
+    if(!hits.length){ results.innerHTML=`<div class="empty">No movies match “${esc(searchTerm.trim())}”.</div>`; return; }
+    hits.forEach(m=>results.appendChild(movieEl(m,true)));
+  };
+  inp.oninput=run;
+  run();
+  setTimeout(()=>inp.focus(),50);
+}
+
+/* ================= settings page ================= */
+function renderSettings(){
+  // People
+  const h1=document.createElement("h2"); h1.className="sec"; h1.textContent="People"; page.appendChild(h1);
+  const pp=document.createElement("div"); pp.className="panel"; page.appendChild(pp);
+  if(!data.people.length){
+    pp.innerHTML=`<div class="no-people">No people yet. Add someone to rate movies for.</div>`;
+  }else{
+    data.people.forEach(p=>{
+      const row=document.createElement("div"); row.className="person";
+      row.innerHTML=`<div class="avatar">${esc(p.name.trim()[0]||"?").toUpperCase()}</div>
+        <div class="pn">${esc(p.name)}</div>
+        <button class="icon-btn rn">✎</button><button class="icon-btn del">✕</button>`;
+      row.querySelector(".rn").onclick=()=>openPrompt("Rename person",p.name,v=>{p.name=v;save();render();});
+      row.querySelector(".del").onclick=()=>openConfirm("Delete person",
+        `Remove “${p.name}”? Their ratings will be removed from all movies.`,"Delete",true,()=>{
+        data.movies.forEach(m=>{ delete m.ratings[p.id]; });
+        data.people=data.people.filter(x=>x.id!==p.id);
+        save(); render();
+      });
+      pp.appendChild(row);
+    });
+  }
+  const addP=document.createElement("button");
+  addP.className="btn-full primary"; addP.textContent="+ Add person";
+  addP.onclick=()=>openPrompt("Add person","",v=>{ data.people.push({id:uid(),name:v}); save(); render(); });
+  page.appendChild(addP);
+
+  // Data
+  const h2=document.createElement("h2"); h2.className="sec"; h2.textContent="Data"; page.appendChild(h2);
+  const dp=document.createElement("div"); dp.className="panel"; page.appendChild(dp);
+  const rated=data.movies.filter(m=>avg(m)!==null).length;
+  dp.innerHTML=`
+    <div class="stat-row"><span>Movies</span><span class="v">${data.movies.length}</span></div>
+    <div class="stat-row"><span>Rated</span><span class="v">${rated}</span></div>
+    <div class="stat-row"><span>People</span><span class="v">${data.people.length}</span></div>`;
+
+  const exp=document.createElement("button");
+  exp.className="btn-full"; exp.textContent="↓ Export JSON";
+  exp.onclick=exportData; page.appendChild(exp);
+
+  const imp=document.createElement("button");
+  imp.className="btn-full"; imp.textContent="↑ Import JSON";
+  imp.onclick=()=>document.getElementById("fileInput").click(); page.appendChild(imp);
+
+  if(localStorage.getItem(BACKUP)){
+    const rb=document.createElement("button");
+    rb.className="btn-full restore"; rb.textContent="↺ Restore last import backup";
+    rb.onclick=()=>openConfirm("Restore backup","Replace current data with the snapshot taken before your last import?","Restore",false,()=>{
+      try{ const b=JSON.parse(localStorage.getItem(BACKUP)); data=b; save(); render(); }catch(e){}
+    });
+    page.appendChild(rb);
+  }
+
+  const hint=document.createElement("div");
+  hint.className="hint";
+  hint.textContent="Everything is stored on this device only, in your browser. Export regularly to keep a backup on disk.";
+  page.appendChild(hint);
+}
+
+/* ================= export / import ================= */
+function exportData(){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const d=new Date().toISOString().slice(0,10);
+  a.href=url; a.download=`movie-trip-${d}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+document.getElementById("fileInput").onchange=e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    let parsed;
+    try{ parsed=JSON.parse(r.result); }catch(err){ openConfirm("Import failed","That file isn't valid JSON.","OK",false,()=>{}); e.target.value=""; return; }
+    if(!parsed||!Array.isArray(parsed.movies)||!Array.isArray(parsed.people)){
+      openConfirm("Import failed","That file isn't a Movie Trip export.","OK",false,()=>{}); e.target.value=""; return;
+    }
+    openConfirm("Import data",
+      `Replace everything with ${parsed.movies.length} movie${parsed.movies.length===1?"":"s"} and ${parsed.people.length} ${parsed.people.length===1?"person":"people"}? Your current data will be backed up first.`,
+      "Import",false,()=>{
+      localStorage.setItem(BACKUP,JSON.stringify(data));
+      data={people:parsed.people,movies:parsed.movies};
+      openMovies.clear(); save(); render();
+    });
+    e.target.value="";
+  };
+  r.readAsText(f);
+};
+
+/* ================= share top 20 ================= */
+shareBtn.onclick=shareTop20;
+async function shareTop20(){
+  const ranked=data.movies.filter(m=>avg(m)!==null)
+    .sort((a,b)=>avg(b)-avg(a)).slice(0,20);
+  if(!ranked.length){ openConfirm("Nothing to share","Rate at least one movie first.","OK",false,()=>{}); return; }
+
+  const W=1080, pad=60, rowH=76, headerH=230;
+  const H=headerH+ranked.length*rowH+70;
+  const c=document.createElement("canvas");
+  c.width=W; c.height=H;
+  const x=c.getContext("2d");
+
+  // bg
+  x.fillStyle="#131110"; x.fillRect(0,0,W,H);
+  x.fillStyle="#1e1a17"; x.fillRect(0,0,W,headerH);
+  x.fillStyle="#f5c542"; x.fillRect(0,headerH-4,W,4);
+
+  // title
+  x.fillStyle="#ede7de";
+  x.font="600 58px Georgia, serif";
+  x.fillText("My Top Movies",pad,110);
+  x.fillStyle="#9c9086";
+  x.font="26px -apple-system, Helvetica, sans-serif";
+  x.fillText(`Top ${ranked.length} · ${new Date().toLocaleDateString(undefined,{month:"long",day:"numeric",year:"numeric"})}`,pad,160);
+  x.fillStyle="#c96a4a";
+  x.font="italic 24px Georgia, serif";
+  x.fillText("Movie Score",pad,200);
+
+  ranked.forEach((m,i)=>{
+    const y=headerH+30+i*rowH;
+    if(i%2===0){ x.fillStyle="#181513"; x.fillRect(pad-20,y-30,W-2*(pad-20),rowH-8); }
+    // rank
+    x.fillStyle="#5a5048"; x.font="600 34px Georgia, serif";
+    x.textAlign="left"; x.fillText(String(i+1).padStart(2,"0"),pad,y+8);
+    // name
+    x.fillStyle="#ede7de"; x.font="34px Georgia, serif";
+    let name=m.name;
+    while(x.measureText(name).width>W-2*pad-260 && name.length>4){ name=name.slice(0,-2); }
+    if(name!==m.name) name=name.trim()+"…";
+    x.fillText(name,pad+90,y+8);
+    // score
+    x.textAlign="right";
+    x.fillStyle="#f5c542"; x.font="600 36px Georgia, serif";
+    x.fillText(avg(m).toFixed(1)+"  ★",W-pad,y+8);
+    x.textAlign="left";
+  });
+
+  c.toBlob(async(blob)=>{
+    const file=new File([blob],"movie-trip-top.png",{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      try{ await navigator.share({files:[file],title:"My Top Movies"}); return; }catch(e){}
+    }
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download="movie-trip-top.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  },"image/png");
+}
+
+/* ================= wire nav ================= */
+nav.querySelectorAll(".tab").forEach(t=>{
+  t.onclick=()=>{ currentPage=t.dataset.page; window.scrollTo(0,0); render(); };
+});
+
+render();
+</script>
+</body>
+</html>
